@@ -13,7 +13,8 @@ class DayRecordsStore {
         .toList();
   }
 
+  // ❌ اقفل الحذف مؤقتًا عشان نختبر
   static void clear() {
-    box.clear();
+    // box.clear();
   }
 }

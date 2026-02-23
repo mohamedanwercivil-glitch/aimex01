@@ -24,7 +24,7 @@ android {
         applicationId = "com.aimex.aimex"
 
         // 👇 خليه 21 لو حصلت مشكلة غيره لـ 23
-        minSdk = 21
+        minSdkVersion = flutter.minSdkVersion
 
         // 👇 ثبتناه برضه على 34
         targetSdk = 34
