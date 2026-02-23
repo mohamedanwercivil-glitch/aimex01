@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 import '../../data/inventory_store.dart';
 import '../../data/customer_store.dart';
 import '../../data/day_records_store.dart';
@@ -170,11 +171,14 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
     }
 
     final dueAmount = total - paidAmount;
+    const uuid = Uuid();
+    final invoiceId = uuid.v4();
 
     // 🔥 تسجيل كل بند في سجل اليوم
     for (final item in items) {
       DayRecordsStore.addRecord({
         'type': 'sale',
+        'invoiceId': invoiceId,
         'customer': customer,
         'item': item.name,
         'qty': item.qty,

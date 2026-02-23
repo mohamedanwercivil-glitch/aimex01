@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 import '../data/inventory_store.dart';
 import '../data/supplier_store.dart';
 import '../data/day_records_store.dart';
@@ -190,9 +191,13 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       }
     }
 
+    const uuid = Uuid();
+    final invoiceId = uuid.v4();
+
     for (final item in items) {
       DayRecordsStore.addRecord({
         'type': 'purchase',
+        'invoiceId': invoiceId,
         'supplier': supplier,
         'item': item.name,
         'qty': item.qty,
