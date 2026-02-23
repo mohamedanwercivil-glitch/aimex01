@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../state/day_state.dart';
 import '../widgets/base_scaffold.dart';
 import 'start_day_screen.dart';
 import 'purchase_screen.dart';
@@ -14,127 +16,136 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BaseScaffold(
-      title: 'الصفحة الرئيسية',
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
+    // Use Consumer to listen to DayState changes
+    return Consumer<DayState>(
+      builder: (context, dayState, child) {
+        final dayStarted = dayState.dayStarted;
 
-            Expanded(
-              child: GridView.count(
-                crossAxisCount: 2,
-                crossAxisSpacing: 16,
-                mainAxisSpacing: 16,
-                children: [
-
-                  _buildCard(
-                    context,
-                    'بداية اليوم',
-                    Icons.wb_sunny,
-                    Colors.teal,
-                    const StartDayScreen(),
+        return BaseScaffold(
+          title: 'الصفحة الرئيسية',
+          body: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                Expanded(
+                  child: GridView.count(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 16,
+                    mainAxisSpacing: 16,
+                    children: [
+                      _buildCard(
+                        context,
+                        'بداية اليوم',
+                        Icons.wb_sunny,
+                        Colors.teal,
+                        const StartDayScreen(),
+                        enabled: !dayStarted,
+                      ),
+                      _buildCard(
+                        context,
+                        'شراء',
+                        Icons.shopping_cart,
+                        Colors.blue,
+                        const PurchaseScreen(),
+                        enabled: dayStarted,
+                      ),
+                      _buildCard(
+                        context,
+                        'بيع',
+                        Icons.point_of_sale,
+                        Colors.green,
+                        const NewSaleScreen(),
+                        enabled: dayStarted,
+                      ),
+                      _buildCard(
+                        context,
+                        'سداد',
+                        Icons.payments,
+                        Colors.indigo,
+                        const SettlementScreen(),
+                        enabled: dayStarted,
+                      ),
+                      _buildCard(
+                        context,
+                        'مصروفات',
+                        Icons.receipt,
+                        Colors.purple,
+                        const ExpensesScreen(),
+                        enabled: dayStarted,
+                      ),
+                      _buildCard(
+                        context,
+                        'مسحوبات',
+                        Icons.account_balance_wallet,
+                        Colors.orange,
+                        const WithdrawScreen(),
+                        enabled: dayStarted,
+                      ),
+                      _buildCard(
+                        context,
+                        'جرد المخزون',
+                        Icons.search,
+                        Colors.red,
+                        const InventoryScreen(),
+                        enabled: true, // Always enabled
+                      ),
+                    ],
                   ),
-
-                  _buildCard(
-                    context,
-                    'شراء',
-                    Icons.shopping_cart,
-                    Colors.blue,
-                    const PurchaseScreen(),
-                  ),
-
-                  _buildCard(
-                    context,
-                    'بيع',
-                    Icons.point_of_sale,
-                    Colors.green,
-                    const NewSaleScreen(),
-                  ),
-
-                  _buildCard(
-                    context,
-                    'سداد',
-                    Icons.payments,
-                    Colors.indigo,
-                    const SettlementScreen(),
-                  ),
-
-                  _buildCard(
-                    context,
-                    'مصروفات',
-                    Icons.receipt,
-                    Colors.purple,
-                    const ExpensesScreen(),
-                  ),
-
-                  _buildCard(
-                    context,
-                    'مسحوبات',
-                    Icons.account_balance_wallet,
-                    Colors.orange,
-                    const WithdrawScreen(),
-                  ),
-
-                  _buildCard(
-                    context,
-                    'جرد المخزون',
-                    Icons.search,
-                    Colors.red,
-                    const InventoryScreen(),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
                 ),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const EndDayScreen(),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      disabledBackgroundColor: Colors.grey, 
                     ),
-                  );
-                },
-                child: const Text('إنهاء اليوم'),
-              ),
+                    onPressed: dayStarted
+                        ? () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const EndDayScreen(),
+                              ),
+                            );
+                          }
+                        : null,
+                    child: const Text('إنهاء اليوم'),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
   Widget _buildCard(
-      BuildContext context,
-      String title,
-      IconData icon,
-      Color color,
-      Widget screen,
-      ) {
+    BuildContext context,
+    String title,
+    IconData icon,
+    Color color,
+    Widget screen, {
+    bool enabled = true,
+  }) {
     return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => screen),
-        );
-      },
+      onTap: enabled
+          ? () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => screen),
+              );
+            }
+          : null,
       child: Container(
         decoration: BoxDecoration(
-          color: color,
+          color: enabled ? color : Colors.grey,
           borderRadius: BorderRadius.circular(20),
         ),
         child: Column(
-          mainAxisAlignment:
-          MainAxisAlignment.center,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(icon, size: 40, color: Colors.white),
             const SizedBox(height: 12),

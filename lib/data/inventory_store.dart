@@ -46,6 +46,18 @@ class InventoryStore {
 
     return true;
   }
+  
+  // =========================
+  // جلب كمية صنف معين
+  // =========================
+  static int getItemQty(String name) {
+    final item = box.get(name);
+    if (item != null) {
+      return item['quantity'] ?? 0;
+    }
+    return 0;
+  }
+
 
   // =========================
   // البحث في الأصناف المتاحة للبيع

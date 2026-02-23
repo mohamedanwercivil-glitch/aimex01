@@ -1,51 +1,68 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../services/finance_service.dart';
 import '../state/day_state.dart';
+import '../state/cash_state.dart';
 import '../data/day_records_store.dart';
 
 class WithdrawScreen extends StatefulWidget {
   const WithdrawScreen({super.key});
 
   @override
-  State<WithdrawScreen> createState() =>
-      _WithdrawScreenState();
+  State<WithdrawScreen> createState() => _WithdrawScreenState();
 }
 
-class _WithdrawScreenState
-    extends State<WithdrawScreen> {
-
+class _WithdrawScreenState extends State<WithdrawScreen> {
   final amountController = TextEditingController();
-  final personController = TextEditingController();
   final descriptionController = TextEditingController();
 
+  String? selectedPerson;
+  String? selectedSource;
+
+  final List<String> _people = ['محمد', 'عمر', 'امي'];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final cashState = context.read<CashState>();
+      if (cashState.allBoxes.contains('نقدي')) {
+        setState(() {
+          selectedSource = 'نقدي';
+        });
+      }
+    });
+  }
+
   void _saveWithdraw() {
-    if (!DayState.instance.dayStarted) return;
-
-    final amount =
-        double.tryParse(amountController.text) ?? 0;
-    final person =
-    personController.text.trim();
-    final description =
-    descriptionController.text.trim();
-
-    if (amount <= 0 || person.isEmpty) {
+    if (!context.read<DayState>().dayStarted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text(
-                'ادخل مبلغ واسم شخص صحيح')),
+        const SnackBar(content: Text('يجب بدء اليوم أولاً')),
+      );
+      return;
+    }
+
+    final amount = double.tryParse(amountController.text) ?? 0;
+    final person = selectedPerson;
+    final source = selectedSource;
+    final description = descriptionController.text.trim();
+
+    if (amount <= 0 || person == null || source == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('الرجاء إدخال جميع البيانات بشكل صحيح')),
       );
       return;
     }
 
     final result = FinanceService.withdraw(
       amount: amount,
-      paymentType: 'كاش',
+      paymentType: source == 'نقدي' ? 'كاش' : 'تحويل',
+      walletName: source == 'نقدي' ? null : source,
     );
 
     if (!result.success) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(
-          SnackBar(content: Text(result.message)));
+          .showSnackBar(SnackBar(content: Text(result.message)));
       return;
     }
 
@@ -54,58 +71,78 @@ class _WithdrawScreenState
       'type': 'withdraw',
       'amount': amount,
       'person': person,
+      'source': source,
       'description': description,
       'date': DateTime.now().toString(),
     });
 
     amountController.clear();
-    personController.clear();
     descriptionController.clear();
+    setState(() {
+      selectedPerson = null;
+    });
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-          content: Text('تم تسجيل المسحوب')),
+      const SnackBar(content: Text('تم تسجيل المسحوب')),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final dayStarted = context.watch<DayState>().dayStarted;
+    final cashState = context.watch<CashState>();
+    final sources = cashState.allBoxes;
+
     return Scaffold(
-      appBar:
-      AppBar(title: const Text('المسحوبات')),
+      appBar: AppBar(title: const Text('المسحوبات')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
+            DropdownButtonFormField<String>(
+              value: selectedSource,
+              decoration: const InputDecoration(
+                labelText: 'مصدر السحب',
+                border: OutlineInputBorder(),
+              ),
+              items: sources.map((source) {
+                return DropdownMenuItem(value: source, child: Text(source));
+              }).toList(),
+              onChanged: dayStarted
+                  ? (value) => setState(() => selectedSource = value)
+                  : null,
+            ),
+            const SizedBox(height: 12),
             TextField(
+              enabled: dayStarted,
               controller: amountController,
-              keyboardType:
-              TextInputType.number,
-              decoration:
-              const InputDecoration(
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
                 labelText: 'المبلغ',
-                border:
-                OutlineInputBorder(),
+                border: OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: personController,
-              decoration:
-              const InputDecoration(
+            DropdownButtonFormField<String>(
+              value: selectedPerson,
+              decoration: const InputDecoration(
                 labelText: 'اسم الشخص',
-                border:
-                OutlineInputBorder(),
+                border: OutlineInputBorder(),
               ),
+              items: _people.map((person) {
+                return DropdownMenuItem(value: person, child: Text(person));
+              }).toList(),
+              onChanged: dayStarted
+                  ? (value) => setState(() => selectedPerson = value)
+                  : null,
             ),
             const SizedBox(height: 12),
             TextField(
+              enabled: dayStarted,
               controller: descriptionController,
-              decoration:
-              const InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'البيان (اختياري)',
-                border:
-                OutlineInputBorder(),
+                border: OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 20),
@@ -113,9 +150,8 @@ class _WithdrawScreenState
               width: double.infinity,
               height: 50,
               child: ElevatedButton(
-                onPressed: _saveWithdraw,
-                child:
-                const Text('حفظ المسحوب'),
+                onPressed: dayStarted ? _saveWithdraw : null,
+                child: const Text('حفظ المسحوب'),
               ),
             ),
           ],

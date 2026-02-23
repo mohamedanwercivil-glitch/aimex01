@@ -12,13 +12,17 @@ class CashState extends ChangeNotifier {
   bool _initialized = false;
 
   double cash = 0;
+  double startOfDayCash = 0;
 
   final Map<String, double> wallets = {
     'فودافون محمد 32': 0,
     'فودافون محمد 57': 0,
     'وي محمد': 0,
     'فودافون عمر': 0,
+    'انستا محمد 015': 0, // <--- المحفظة الجديدة
   };
+  final Map<String, double> startOfDayWallets = {};
+
 
   // ======================
   // يشتغل تلقائي أول استخدام فقط
@@ -69,12 +73,14 @@ class CashState extends ChangeNotifier {
     _ensureInit();
 
     cash = startCash;
+    startOfDayCash = startCash;
 
     wallets.updateAll((key, value) => 0);
 
     startWallets.forEach((key, value) {
       if (wallets.containsKey(key)) {
         wallets[key] = value;
+        startOfDayWallets[key] = value;
       }
     });
 

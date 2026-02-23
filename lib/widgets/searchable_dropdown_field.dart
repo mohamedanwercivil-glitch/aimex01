@@ -4,12 +4,14 @@ class SearchableDropdownField extends StatefulWidget {
   final TextEditingController controller;
   final String label;
   final List<String> Function(String) onSearch;
+  final bool enabled;
 
   const SearchableDropdownField({
     super.key,
     required this.controller,
     required this.label,
     required this.onSearch,
+    this.enabled = true,
   });
 
   @override
@@ -34,6 +36,7 @@ class _SearchableDropdownFieldState
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         TextField(
+          enabled: widget.enabled,
           controller: widget.controller,
           focusNode: _focusNode,
           decoration: InputDecoration(
@@ -56,8 +59,7 @@ class _SearchableDropdownFieldState
                 return ListTile(
                   title: Text(suggestions[index]),
                   onTap: () {
-                    widget.controller.text =
-                    suggestions[index];
+                    widget.controller.text = suggestions[index];
                     setState(() {
                       suggestions.clear();
                     });

@@ -1,4 +1,7 @@
+// ignore_for_file: deprecated_member_use
+
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../data/inventory_store.dart';
 import '../data/supplier_store.dart';
 import '../data/day_records_store.dart';
@@ -35,6 +38,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   final itemController = TextEditingController();
   final qtyController = TextEditingController();
   final priceController = TextEditingController();
+  final paidAmountController = TextEditingController();
 
   String selectedUnit = 'صغرى';
   String paymentType = 'كاش';
@@ -43,8 +47,23 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   final List<PurchaseItem> items = [];
   int? editingIndex;
 
-  double get total =>
-      items.fold(0, (sum, item) => sum + item.total);
+  double get total => items.fold(0, (sum, item) => sum + item.total);
+
+  @override
+  void initState() {
+    super.initState();
+    paidAmountController.text = '0';
+  }
+
+  @override
+  void dispose() {
+    supplierController.dispose();
+    itemController.dispose();
+    qtyController.dispose();
+    priceController.dispose();
+    paidAmountController.dispose();
+    super.dispose();
+  }
 
   void _addItem() {
     final name = itemController.text.trim();
@@ -72,7 +91,6 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
           ),
         );
       }
-
       itemController.clear();
       qtyController.clear();
       priceController.clear();
@@ -81,10 +99,72 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   }
 
   void _saveInvoice() {
-    if (!DayState.instance.dayStarted) return;
+    if (!context.read<DayState>().dayStarted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('يجب بدء اليوم أولاً')),
+      );
+      return;
+    }
 
     final supplier = supplierController.text.trim();
     if (supplier.isEmpty || items.isEmpty) return;
+
+    if (paymentType == 'آجل') {
+      _performSave(0);
+      return;
+    }
+
+    final paidAmount = double.tryParse(paidAmountController.text) ?? 0.0;
+    if (paidAmount < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('المبلغ المدفوع لا يمكن أن يكون سالباً')),
+      );
+      return;
+    }
+
+    final dueAmount = total - paidAmount;
+
+    if (dueAmount > 0) {
+      _showConfirmationDialog(dueAmount, () => _performSave(paidAmount));
+    } else {
+      _performSave(paidAmount);
+    }
+  }
+
+  void _showConfirmationDialog(double dueAmount, VoidCallback onConfirm) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('تأكيد الفاتورة'),
+        content: Text(
+            'المبلغ المدفوع أقل من الإجمالي. سيتم اعتبار الفاتورة آجل بمبلغ متبقي قدره ${dueAmount.toStringAsFixed(2)}. هل تريد المتابعة؟'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('إلغاء'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              onConfirm();
+            },
+            child: const Text('متابعة'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _performSave(double paidAmount) {
+    final supplier = supplierController.text.trim();
+    final dueAmount = total - paidAmount;
+
+    if (paymentType == 'تحويل' && selectedWallet == null && paidAmount > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('الرجاء اختيار المحفظة للدفع بالتحويل')),
+      );
+      return;
+    }
 
     SupplierStore.addSupplier(supplier);
 
@@ -96,19 +176,20 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       );
     }
 
-    final result = FinanceService.withdraw(
-      amount: total,
-      paymentType: paymentType,
-      walletName: selectedWallet,
-    );
+    if (paidAmount > 0) {
+      final result = FinanceService.withdraw(
+        amount: paidAmount,
+        paymentType: paymentType,
+        walletName: selectedWallet,
+      );
 
-    if (!result.success) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(result.message)));
-      return;
+      if (!result.success) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(result.message)));
+        return;
+      }
     }
 
-    // 🔥 تسجيل كل بند في سجل اليوم
     for (final item in items) {
       DayRecordsStore.addRecord({
         'type': 'purchase',
@@ -119,9 +200,9 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
         'total': item.total,
         'invoiceTotal': total,
         'paymentType': paymentType,
-        'wallet': paymentType == 'تحويل'
-            ? selectedWallet ?? ''
-            : 'نقدي',
+        'wallet': paymentType == 'تحويل' ? selectedWallet ?? '' : 'نقدي',
+        'paidAmount': paidAmount,
+        'dueAmount': dueAmount,
         'date': DateTime.now().toString(),
       });
     }
@@ -129,6 +210,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     setState(() {
       items.clear();
       supplierController.clear();
+      paidAmountController.text = '0';
       editingIndex = null;
       selectedWallet = null;
       paymentType = 'كاش';
@@ -143,6 +225,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   @override
   Widget build(BuildContext context) {
     final wallets = CashState.instance.wallets.keys.toList();
+    final dayStarted = context.watch<DayState>().dayStarted;
 
     return Scaffold(
       appBar: AppBar(title: const Text('المشتريات')),
@@ -151,30 +234,24 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
         child: SingleChildScrollView(
           child: Column(
             children: [
-
               SearchableDropdownField(
+                enabled: dayStarted,
                 controller: supplierController,
                 label: 'اسم المورد',
-                onSearch: (value) =>
-                    SupplierStore.searchSuppliers(value),
+                onSearch: (value) => SupplierStore.searchSuppliers(value),
               ),
-
               const SizedBox(height: 12),
-
               SearchableDropdownField(
+                enabled: dayStarted,
                 controller: itemController,
                 label: 'اسم الصنف',
-                onSearch: (value) =>
-                    InventoryStore.getAllItems()
-                        .map((e) => e['name'] as String)
-                        .where((name) => name
-                        .toLowerCase()
-                        .contains(value.toLowerCase()))
-                        .toList(),
+                onSearch: (value) => InventoryStore.getAllItems()
+                    .map((e) => e['name'] as String)
+                    .where((name) =>
+                        name.toLowerCase().contains(value.toLowerCase()))
+                    .toList(),
               ),
-
               const SizedBox(height: 12),
-
               DropdownButtonFormField<String>(
                 value: selectedUnit,
                 decoration: const InputDecoration(
@@ -182,18 +259,16 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                   border: OutlineInputBorder(),
                 ),
                 items: const [
-                  DropdownMenuItem(
-                      value: 'صغرى', child: Text('صغرى')),
-                  DropdownMenuItem(
-                      value: 'كبرى', child: Text('كبرى')),
+                  DropdownMenuItem(value: 'صغرى', child: Text('صغرى')),
+                  DropdownMenuItem(value: 'كبرى', child: Text('كبرى')),
                 ],
-                onChanged: (value) =>
-                    setState(() => selectedUnit = value!),
+                onChanged: dayStarted
+                    ? (value) => setState(() => selectedUnit = value!)
+                    : null,
               ),
-
               const SizedBox(height: 12),
-
               TextField(
+                enabled: dayStarted,
                 controller: qtyController,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
@@ -201,10 +276,9 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                   border: OutlineInputBorder(),
                 ),
               ),
-
               const SizedBox(height: 12),
-
               TextField(
+                enabled: dayStarted,
                 controller: priceController,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
@@ -212,9 +286,41 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                   border: OutlineInputBorder(),
                 ),
               ),
-
-              const SizedBox(height: 12),
-
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: dayStarted ? _addItem : null,
+                child: Text(editingIndex != null ? 'تعديل البند' : 'إضافة للفاتورة'),
+              ),
+              const SizedBox(height: 20),
+              ...items.asMap().entries.map((entry) {
+                final index = entry.key;
+                final item = entry.value;
+                return Card(
+                  child: ListTile(
+                    onTap: dayStarted
+                        ? () {
+                            setState(() {
+                              editingIndex = index;
+                              itemController.text = item.name;
+                              qtyController.text = item.qty.toString();
+                              priceController.text = item.price.toString();
+                              selectedUnit = item.unit;
+                            });
+                          }
+                        : null,
+                    title: Text('${item.name} (${item.unit})'),
+                    subtitle: Text(
+                        'كمية: ${item.qty}  سعر: ${item.price}  إجمالي: ${item.total}'),
+                  ),
+                );
+              }),
+              const SizedBox(height: 20),
+              Text(
+                'إجمالي الفاتورة: $total',
+                style: const TextStyle(
+                    fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 20),
               DropdownButtonFormField<String>(
                 value: paymentType,
                 decoration: const InputDecoration(
@@ -224,11 +330,16 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                 items: const [
                   DropdownMenuItem(value: 'كاش', child: Text('كاش')),
                   DropdownMenuItem(value: 'تحويل', child: Text('تحويل')),
+                  DropdownMenuItem(value: 'آجل', child: Text('آجل')),
                 ],
-                onChanged: (value) =>
-                    setState(() => paymentType = value!),
+                onChanged: dayStarted
+                    ? (value) {
+                        setState(() {
+                          paymentType = value!;
+                        });
+                      }
+                    : null,
               ),
-
               if (paymentType == 'تحويل') ...[
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
@@ -239,64 +350,30 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                   ),
                   items: wallets
                       .map((wallet) => DropdownMenuItem(
-                    value: wallet,
-                    child: Text(wallet),
-                  ))
+                            value: wallet,
+                            child: Text(wallet),
+                          ))
                       .toList(),
-                  onChanged: (value) =>
-                      setState(() => selectedWallet = value),
+                  onChanged: dayStarted
+                      ? (value) => setState(() => selectedWallet = value)
+                      : null,
                 ),
               ],
-
-              const SizedBox(height: 16),
-
-              ElevatedButton(
-                onPressed: _addItem,
-                child: Text(editingIndex != null
-                    ? 'تعديل البند'
-                    : 'إضافة للفاتورة'),
-              ),
-
-              const SizedBox(height: 20),
-
-              ...items.asMap().entries.map((entry) {
-                final index = entry.key;
-                final item = entry.value;
-
-                return Card(
-                  child: ListTile(
-                    onTap: () {
-                      setState(() {
-                        editingIndex = index;
-                        itemController.text = item.name;
-                        qtyController.text =
-                            item.qty.toString();
-                        priceController.text =
-                            item.price.toString();
-                        selectedUnit = item.unit;
-                      });
-                    },
-                    title:
-                    Text('${item.name} (${item.unit})'),
-                    subtitle: Text(
-                        'كمية: ${item.qty}  سعر: ${item.price}  إجمالي: ${item.total}'),
+              if (paymentType != 'آجل') ...[
+                const SizedBox(height: 12),
+                TextField(
+                  enabled: dayStarted,
+                  controller: paidAmountController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'المبلغ المدفوع',
+                    border: OutlineInputBorder(),
                   ),
-                );
-              }),
-
+                ),
+              ],
               const SizedBox(height: 20),
-
-              Text(
-                'إجمالي الفاتورة: $total',
-                style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold),
-              ),
-
-              const SizedBox(height: 20),
-
               ElevatedButton(
-                onPressed: _saveInvoice,
+                onPressed: dayStarted ? _saveInvoice : null,
                 child: const Text('حفظ الفاتورة'),
               ),
             ],

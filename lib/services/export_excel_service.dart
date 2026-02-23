@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:excel/excel.dart';
+import 'package:path_provider/path_provider.dart';
 import '../data/day_records_store.dart';
 import '../state/cash_state.dart';
 
@@ -19,43 +20,73 @@ class ExportExcelService {
     // =========================
     // المبيعات
     // =========================
-    var sales = excel['المبيعات_$date'];
-    sales.appendRow([
+    var salesSheet = excel['المبيعات_$date'];
+    salesSheet.appendRow([
       'العميل','الصنف','الكمية','السعر','الإجمالي',
-      'دفع/أجل','طريقة الدفع','المحفظة'
+      'طريقة الدفع','المحفظة', 'المبلغ المدفوع', 'المبلغ المتبقي'
     ]);
 
-    for (var r in records.where((e)=>e['type']=='sale')) {
-      sales.appendRow([
+    var salesRecords = records.where((e) => e['type'] == 'sale').toList();
+    String? currentCustomer;
+
+    for (var i = 0; i < salesRecords.length; i++) {
+      var r = salesRecords[i];
+
+      if (currentCustomer != r['customer']) {
+        if (currentCustomer != null) {
+          salesSheet.appendRow([]);
+          salesSheet.appendRow([]);
+        }
+        currentCustomer = r['customer'];
+      }
+
+      salesSheet.appendRow([
         r['customer'],
         r['item'],
         r['qty'],
         r['price'],
         r['total'],
-        r['paymentStatus'],
         r['paymentType'],
-        r['wallet']
+        r['wallet'],
+        r['paidAmount'],
+        r['dueAmount']
       ]);
     }
 
     // =========================
     // المشتريات
     // =========================
-    var purchases = excel['المشتريات_$date'];
-    purchases.appendRow([
+    var purchasesSheet = excel['المشتريات_$date'];
+    purchasesSheet.appendRow([
       'المورد','الصنف','الكمية','السعر','الإجمالي',
-      'طريقة الدفع','المحفظة'
+      'طريقة الدفع','المحفظة', 'المبلغ المدفوع', 'المبلغ المتبقي'
     ]);
 
-    for (var r in records.where((e)=>e['type']=='purchase')) {
-      purchases.appendRow([
+    var purchaseRecords =
+    records.where((e) => e['type'] == 'purchase').toList();
+    String? currentSupplier;
+
+    for (var i = 0; i < purchaseRecords.length; i++) {
+      var r = purchaseRecords[i];
+
+      if (currentSupplier != r['supplier']) {
+        if (currentSupplier != null) {
+          purchasesSheet.appendRow([]);
+          purchasesSheet.appendRow([]);
+        }
+        currentSupplier = r['supplier'];
+      }
+
+      purchasesSheet.appendRow([
         r['supplier'],
         r['item'],
         r['qty'],
         r['price'],
         r['total'],
         r['paymentType'],
-        r['wallet']
+        r['wallet'],
+        r['paidAmount'],
+        r['dueAmount']
       ]);
     }
 
@@ -122,21 +153,72 @@ class ExportExcelService {
     // =========================
     // ملخص اليوم
     // =========================
-    var summary = excel['ملخص_$date'];
-    summary.appendRow(['إجمالي الفلوس']);
-    summary.appendRow([CashState.instance.totalMoney]);
+    var summarySheet = excel['ملخص_$date'];
 
-    // 🔥 حفظ في Download/AIMEX
-    String downloadPath = "/storage/emulated/0/Download/AIMEX/$date";
+    final startOfDayCash = CashState.instance.startOfDayCash;
+    final startOfDayWallets = CashState.instance.startOfDayWallets;
+    final totalStartOfDayMoney =
+        startOfDayCash +
+            startOfDayWallets.values.fold(0.0, (sum, val) => sum + val);
 
-    Directory(downloadPath).createSync(recursive: true);
+    final totalSales =
+    salesRecords.fold(0.0, (sum, r) => sum + (r['total'] as double));
+    final totalPaidSales =
+    salesRecords.fold(0.0, (sum, r) => sum + (r['paidAmount'] as double));
+    final totalDueSales = totalSales - totalPaidSales;
 
-    String filePath =
-        "$downloadPath/تقرير_اليوم_$date.xlsx";
+    final totalPurchases =
+    purchaseRecords.fold(0.0, (sum, r) => sum + (r['total'] as double));
+    final totalPaidPurchases =
+    purchaseRecords.fold(0.0, (sum, r) => sum + (r['paidAmount'] as double));
+    final totalDuePurchases = totalPurchases - totalPaidPurchases;
 
-    File(filePath)
-      ..createSync(recursive: true)
-      ..writeAsBytesSync(excel.encode()!);
+    summarySheet.appendRow(['رصيد بداية اليوم']);
+    summarySheet.appendRow(['اجمالي', totalStartOfDayMoney]);
+    summarySheet.appendRow(['نقدي', startOfDayCash]);
+    for (var entry in startOfDayWallets.entries) {
+      summarySheet.appendRow([entry.key, entry.value]);
+    }
+
+    summarySheet.appendRow([]);
+
+    summarySheet.appendRow(['المشتريات']);
+    summarySheet.appendRow(['اجمالي المشتريات', totalPurchases]);
+    summarySheet.appendRow(['اجمالي المدفوع', totalPaidPurchases]);
+    summarySheet.appendRow(['اجمالي المتبقي', totalDuePurchases]);
+
+    summarySheet.appendRow([]);
+
+    summarySheet.appendRow(['المبيعات']);
+    summarySheet.appendRow(['اجمالي المبيعات', totalSales]);
+    summarySheet.appendRow(['اجمالي المستلم', totalPaidSales]);
+    summarySheet.appendRow(['اجمالي المتبقي', totalDueSales]);
+
+    summarySheet.appendRow([]);
+
+    summarySheet.appendRow(['رصيد نهاية اليوم']);
+    summarySheet.appendRow(['اجمالي', CashState.instance.totalMoney]);
+    summarySheet.appendRow(['نقدي', CashState.instance.cash]);
+    for (var entry in CashState.instance.wallets.entries) {
+      summarySheet.appendRow([entry.key, entry.value]);
+    }
+
+    // =========================
+    // حفظ آمن (Android Scoped Storage)
+    // =========================
+
+    final baseDir = await getExternalStorageDirectory();
+    final aimexDir = Directory("${baseDir!.path}/AIMEX/$date");
+
+    if (!await aimexDir.exists()) {
+      await aimexDir.create(recursive: true);
+    }
+
+    final filePath =
+        "${aimexDir.path}/تقرير_اليوم_$date.xlsx";
+
+    final file = File(filePath);
+    await file.writeAsBytes(excel.encode()!, flush: true);
 
     DayRecordsStore.clear();
 
