@@ -17,13 +17,13 @@ dependencies:
   # Icons
   cupertino_icons: ^1.0.8
 
-  # Local Database (لحفظ البيانات وعدم ضياعها)
+  # Local Database
   hive: ^2.2.3
   hive_flutter: ^1.1.0
   path_provider: ^2.1.2
 
   # Excel Export
-  excel: ^2.0.4
+  excel: ^2.1.0
   
   # Share
   share_plus: ^7.2.2
@@ -32,10 +32,9 @@ dependencies:
   uuid: ^4.3.3
 
   # Notifications
-  flutter_local_notifications: ^16.3.2
-  workmanager: ^0.5.2
+  flutter_local_notifications: ^20.1.0
+  workmanager: ^0.9.0
   shared_preferences: ^2.2.2
-
 
 dev_dependencies:
   flutter_test:

@@ -1,15 +1,33 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+// A top-level function to handle notification responses
+void onDidReceiveNotificationResponse(
+    NotificationResponse notificationResponse) {
+  // Handle notification tap if needed
+}
+
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _notificationsPlugin =
-      FlutterLocalNotificationsPlugin();
+  FlutterLocalNotificationsPlugin();
 
-  static void initialize() {
-    const InitializationSettings initializationSettings = InitializationSettings(
-      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-      iOS: DarwinInitializationSettings(),
+  static Future<void> initialize() async {
+    const AndroidInitializationSettings initializationSettingsAndroid =
+    AndroidInitializationSettings('@mipmap/ic_launcher');
+
+    const DarwinInitializationSettings initializationSettingsIOS =
+    DarwinInitializationSettings();
+
+    const InitializationSettings initializationSettings =
+    InitializationSettings(
+      android: initializationSettingsAndroid,
+      iOS: initializationSettingsIOS,
     );
-    _notificationsPlugin.initialize(initializationSettings);
+
+    await _notificationsPlugin.initialize(
+      settings: initializationSettings,
+      onDidReceiveNotificationResponse:
+      onDidReceiveNotificationResponse,
+    );
   }
 
   static Future<void> showNotification({
@@ -17,7 +35,8 @@ class NotificationService {
     required String title,
     required String body,
   }) async {
-    const NotificationDetails notificationDetails = NotificationDetails(
+    const NotificationDetails notificationDetails =
+    NotificationDetails(
       android: AndroidNotificationDetails(
         'end_of_day_channel',
         'End of Day Reminder',
@@ -27,6 +46,12 @@ class NotificationService {
       ),
       iOS: DarwinNotificationDetails(),
     );
-    await _notificationsPlugin.show(id, title, body, notificationDetails);
+
+    await _notificationsPlugin.show(
+      id: id,
+      title: title,
+      body: body,
+      notificationDetails: notificationDetails,
+    );
   }
 }

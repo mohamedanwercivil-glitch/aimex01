@@ -7,8 +7,8 @@ import '../state/cash_state.dart';
 class ExportExcelService {
   static Future<String> exportDay() async {
     var now = DateTime.now();
-    String date =
-        "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+    String date = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+    String time = "${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}";
 
     var excel = Excel.createExcel();
     var records = DayRecordsStore.getAll();
@@ -271,7 +271,7 @@ class ExportExcelService {
       await aimexDir.create(recursive: true);
     }
 
-    final filePath = "${aimexDir.path}/تقرير_اليوم_$date.xlsx";
+    final filePath = "${aimexDir.path}/تقرير_${date}_$time.xlsx";
 
     final file = File(filePath);
     await file.writeAsBytes(excel.encode()!, flush: true);

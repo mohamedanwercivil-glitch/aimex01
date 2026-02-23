@@ -17,7 +17,8 @@ void callbackDispatcher() {
           NotificationService.showNotification(
             id: 0,
             title: 'لا تنسى إغلاق اليوم',
-            body: 'لقد تجاوزت الساعة 10 مساءً. الرجاء إغلاق اليوم في أقرب وقت.',
+            body:
+            'لقد تجاوزت الساعة 10 مساءً. الرجاء إغلاق اليوم في أقرب وقت.',
           );
         }
       }
@@ -36,9 +37,9 @@ class BackgroundService {
       'endOfDayReminder',
       endOfDayTask,
       frequency: const Duration(hours: 1),
-      initialDelay: const Duration(minutes: 1), // Check shortly after start
+      initialDelay: const Duration(minutes: 1),
       constraints: Constraints(
-        networkType: NetworkType.not_required,
+        networkType: NetworkType.notRequired,
       ),
     );
   }

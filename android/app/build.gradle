@@ -7,27 +7,24 @@ plugins {
 android {
     namespace = "com.aimex.aimex"
 
-    // 👇 ثبتناهم على 34
-    compileSdk = 34
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+        coreLibraryDesugaringEnabled true
     }
 
     kotlinOptions {
-        jvmTarget = "1.8"
+        jvmTarget = "17"
     }
 
     defaultConfig {
         applicationId = "com.aimex.aimex"
 
-        // 👇 خليه 21 لو حصلت مشكلة غيره لـ 23
         minSdkVersion = flutter.minSdkVersion
-
-        // 👇 ثبتناه برضه على 34
-        targetSdk = 34
+        targetSdk = 36
 
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -38,6 +35,10 @@ android {
             signingConfig = signingConfigs.debug
         }
     }
+}
+
+dependencies {
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
 }
 
 flutter {

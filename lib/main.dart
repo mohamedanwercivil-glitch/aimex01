@@ -12,7 +12,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Initialize services
-  NotificationService.initialize();
+  await NotificationService.initialize(); // Added await
   BackgroundService.initialize();
 
   await Hive.initFlutter();
