@@ -3,11 +3,17 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'data/supplier_store.dart';
 import 'screens/home_screen.dart';
+import 'services/background_service.dart';
+import 'services/notification_service.dart';
 import 'state/day_state.dart';
 import 'state/cash_state.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize services
+  NotificationService.initialize();
+  BackgroundService.initialize();
 
   await Hive.initFlutter();
 

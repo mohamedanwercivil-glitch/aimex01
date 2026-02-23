@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/background_service.dart';
 import '../state/day_state.dart';
 import '../state/cash_state.dart';
 
@@ -55,6 +56,7 @@ class _StartDayScreenState
     );
 
     DayState.instance.startDay(cash);
+    BackgroundService.scheduleEndOfDayTask();
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(

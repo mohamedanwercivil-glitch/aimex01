@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
+import '../services/background_service.dart';
 import '../state/day_state.dart';
 import '../state/cash_state.dart';
 import '../services/export_excel_service.dart';
@@ -20,6 +21,7 @@ class EndDayScreen extends StatelessWidget {
 
     // 🔥 إنهاء اليوم
     DayState.instance.endDay();
+    BackgroundService.cancelEndOfDayTask();
 
     // Show a dialog with share option
     showDialog(
@@ -95,7 +97,7 @@ class EndDayScreen extends StatelessWidget {
                   backgroundColor: Colors.red,
                 ),
                 onPressed: () => _endDay(context),
-                child: const Text('إنهاء اليوم'),
+                child: const Text('إنهاء اليوم وتصدير التقرير'),
               ),
             ),
           ],
