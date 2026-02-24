@@ -40,6 +40,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   final qtyController = TextEditingController();
   final priceController = TextEditingController();
   final paidAmountController = TextEditingController();
+  final discountController = TextEditingController(); // Added discount controller
 
   String selectedUnit = 'صغرى';
   String paymentType = 'كاش';
@@ -48,12 +49,15 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   final List<PurchaseItem> items = [];
   int? editingIndex;
 
-  double get total => items.fold(0, (sum, item) => sum + item.total);
+  double get subtotal => items.fold(0, (sum, item) => sum + item.total);
+  double get discount => double.tryParse(discountController.text) ?? 0.0;
+  double get total => subtotal - discount;
 
   @override
   void initState() {
     super.initState();
     paidAmountController.text = '0';
+    discountController.text = '0'; // Initialize discount
   }
 
   @override
@@ -63,6 +67,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     qtyController.dispose();
     priceController.dispose();
     paidAmountController.dispose();
+    discountController.dispose(); // Dispose discount controller
     super.dispose();
   }
 
@@ -109,6 +114,19 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
 
     final supplier = supplierController.text.trim();
     if (supplier.isEmpty || items.isEmpty) return;
+
+    if (discount < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('الخصم لا يمكن أن يكون سالباً')),
+      );
+      return;
+    }
+    if (total < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('الإجمالي بعد الخصم لا يمكن أن يكون سالباً')),
+      );
+      return;
+    }
 
     if (paymentType == 'آجل') {
       _performSave(0);
@@ -209,6 +227,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
         'paidAmount': paidAmount,
         'dueAmount': dueAmount,
         'time': DateTime.now().toString(),
+        'discount': discount, // Added discount
       });
     }
 
@@ -216,6 +235,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       items.clear();
       supplierController.clear();
       paidAmountController.text = '0';
+      discountController.text = '0'; // Clear discount
       editingIndex = null;
       selectedWallet = null;
       paymentType = 'كاش';
@@ -321,9 +341,27 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
               }),
               const SizedBox(height: 20),
               Text(
-                'إجمالي الفاتورة: ${total.toStringAsFixed(2)}',
+                'الإجمالي: ${subtotal.toStringAsFixed(2)}',
                 style: const TextStyle(
                     fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                enabled: dayStarted,
+                controller: discountController,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'الخصم',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'صافي الفاتورة: ${total.toStringAsFixed(2)}',
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 20),
               DropdownButtonFormField<String>(
