@@ -1,5 +1,6 @@
 // ignore_for_file: deprecated_member_use
 
+import 'package:aimex/widgets/selectable_text_field.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
@@ -292,24 +293,18 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                     : null,
               ),
               const SizedBox(height: 12),
-              TextField(
+              SelectableTextField(
                 enabled: dayStarted,
                 controller: qtyController,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  labelText: 'الكمية',
-                  border: OutlineInputBorder(),
-                ),
+                labelText: 'الكمية',
               ),
               const SizedBox(height: 12),
-              TextField(
+              SelectableTextField(
                 enabled: dayStarted,
                 controller: priceController,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  labelText: 'سعر الوحدة',
-                  border: OutlineInputBorder(),
-                ),
+                labelText: 'سعر الوحدة',
               ),
               const SizedBox(height: 16),
               ElevatedButton(
@@ -346,15 +341,12 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                     fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 12),
-              TextField(
+              SelectableTextField(
                 enabled: dayStarted,
                 controller: discountController,
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  labelText: 'الخصم',
-                  border: OutlineInputBorder(),
-                ),
+                labelText: 'الخصم',
                 onChanged: (_) => setState(() {}),
               ),
               const SizedBox(height: 12),
@@ -404,14 +396,11 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
               ],
               if (paymentType != 'آجل') ...[
                 const SizedBox(height: 12),
-                TextField(
+                SelectableTextField(
                   enabled: dayStarted,
                   controller: paidAmountController,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                    labelText: 'المبلغ المدفوع',
-                    border: OutlineInputBorder(),
-                  ),
+                  labelText: 'المبلغ المدفوع',
                 ),
               ],
               const SizedBox(height: 20),

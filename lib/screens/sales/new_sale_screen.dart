@@ -1,3 +1,4 @@
+import 'package:aimex/widgets/selectable_text_field.dart';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
@@ -345,26 +346,20 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
                 },
               ),
               const SizedBox(height: 12),
-              TextField(
+              SelectableTextField(
                 enabled: dayStarted,
                 controller: qtyController,
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  labelText: 'الكمية',
-                  border: OutlineInputBorder(),
-                ),
+                labelText: 'الكمية',
               ),
               const SizedBox(height: 12),
-              TextField(
+              SelectableTextField(
                 enabled: dayStarted,
                 controller: priceController,
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  labelText: 'سعر البيع',
-                  border: OutlineInputBorder(),
-                ),
+                labelText: 'سعر البيع',
               ),
               const SizedBox(height: 12),
               ElevatedButton(
@@ -401,15 +396,12 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
                     const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 12),
-              TextField(
+              SelectableTextField(
                 enabled: dayStarted,
                 controller: discountController,
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  labelText: 'الخصم',
-                  border: OutlineInputBorder(),
-                ),
+                labelText: 'الخصم',
                 onChanged: (_) => setState(() {}),
               ),
               const SizedBox(height: 12),
@@ -440,15 +432,12 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
               ),
               if (paymentType != 'آجل') ...[
                 const SizedBox(height: 12),
-                TextField(
+                SelectableTextField(
                   enabled: dayStarted,
                   controller: paidAmountController,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                    labelText: 'المبلغ المدفوع',
-                    border: OutlineInputBorder(),
-                  ),
+                  labelText: 'المبلغ المدفوع',
                 ),
               ],
               if (paymentType == 'تحويل') ...[
