@@ -23,6 +23,13 @@ class SaleItem {
   double get total => qty * price;
 }
 
+class _DisplayableSaleItem {
+  final String name;
+  final double qty;
+
+  _DisplayableSaleItem({required this.name, required this.qty});
+}
+
 class NewSaleScreen extends StatefulWidget {
   const NewSaleScreen({super.key});
 
@@ -278,20 +285,48 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
               ValueListenableBuilder(
                 valueListenable: InventoryStore.box.listenable(),
                 builder: (context, box, child) {
-                  return Autocomplete<String>(
+                  return Autocomplete<_DisplayableSaleItem>(
                     key: _itemAutocompleteKey,
+                    displayStringForOption: (option) => option.name,
                     optionsBuilder: (TextEditingValue textEditingValue) {
                       if (textEditingValue.text.isEmpty) {
-                        return const Iterable<String>.empty();
+                        return const Iterable<_DisplayableSaleItem>.empty();
                       }
                       return InventoryStore.searchAvailableItems(textEditingValue.text)
-                          .map((item) => "${item['name']} (المتاح: ${item['qty']})");
+                          .map((item) => _DisplayableSaleItem(name: item['name'] as String, qty: item['qty'] as double));
                     },
-                    onSelected: (String selection) {
-                      final itemName = selection.split(' (').first;
+                    onSelected: (_DisplayableSaleItem selection) {
                       setState(() {
-                        selectedItemName = itemName;
+                        selectedItemName = selection.name;
                       });
+                    },
+                    optionsViewBuilder: (context, onSelected, options) {
+                      return Align(
+                        alignment: Alignment.topLeft,
+                        child: Material(
+                          elevation: 4.0,
+                          child: SizedBox(
+                            width: MediaQuery.of(context).size.width - 32,
+                            child: ListView.builder(
+                              padding: EdgeInsets.zero,
+                              itemCount: options.length,
+                              shrinkWrap: true,
+                              itemBuilder: (BuildContext context, int index) {
+                                final option = options.elementAt(index);
+                                return InkWell(
+                                  onTap: () {
+                                    onSelected(option);
+                                  },
+                                  child: ListTile(
+                                    title: Text(option.name),
+                                    trailing: Text('المتاح: ${option.qty}'),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      );
                     },
                     fieldViewBuilder: (BuildContext context,
                         TextEditingController fieldController,
