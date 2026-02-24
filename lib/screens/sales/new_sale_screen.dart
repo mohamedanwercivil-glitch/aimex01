@@ -11,7 +11,7 @@ import '../../state/cash_state.dart';
 
 class SaleItem {
   final String name;
-  final int qty;
+  final double qty;
   final double price;
 
   SaleItem({
@@ -35,20 +35,26 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
   final qtyController = TextEditingController();
   final priceController = TextEditingController();
   final paidAmountController = TextEditingController();
+  final discountController = TextEditingController();
 
-  String? selectedItem;
+  String? selectedItemName;
   String paymentType = 'كاش';
   String? selectedWallet;
 
   final List<SaleItem> items = [];
   int? editingIndex;
+  Key _customerAutocompleteKey = UniqueKey();
+  Key _itemAutocompleteKey = UniqueKey();
 
-  double get total => items.fold(0.0, (sum, item) => sum + item.total);
+  double get subtotal => items.fold(0.0, (sum, item) => sum + item.total);
+  double get discount => double.tryParse(discountController.text) ?? 0.0;
+  double get total => subtotal - discount;
 
   @override
   void initState() {
     super.initState();
     paidAmountController.text = '0';
+    discountController.text = '0';
   }
 
   @override
@@ -57,24 +63,26 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
     qtyController.dispose();
     priceController.dispose();
     paidAmountController.dispose();
+    discountController.dispose();
     super.dispose();
   }
 
   void _addItem() {
-    final name = selectedItem;
-    final qty = int.tryParse(qtyController.text) ?? 0;
-    final price = double.tryParse(priceController.text) ?? 0;
+    final name = selectedItemName;
+    final qty = double.tryParse(qtyController.text) ?? 0.0;
+    final price = double.tryParse(priceController.text) ?? 0.0;
 
     if (name == null || name.isEmpty || qty <= 0 || price <= 0) return;
-    
+
     final availableQty = InventoryStore.getItemQty(name);
     if (qty > availableQty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('الكمية غير كافية للصنف $name. الكمية المتاحة: $availableQty')),
+        SnackBar(
+            content: Text(
+                'الكمية غير كافية للصنف $name. الكمية المتاحة: $availableQty')),
       );
       return;
     }
-
 
     setState(() {
       if (editingIndex != null) {
@@ -83,7 +91,8 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
       } else {
         items.add(SaleItem(name: name, qty: qty, price: price));
       }
-      selectedItem = null;
+      selectedItemName = null;
+      _itemAutocompleteKey = UniqueKey(); // Reset Autocomplete
       qtyController.clear();
       priceController.clear();
     });
@@ -91,7 +100,7 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
 
   void _saveSale() {
     if (!context.read<DayState>().dayStarted) {
-       ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('يجب بدء اليوم أولاً')),
       );
       return;
@@ -100,7 +109,22 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
     final customer = customerController.text.trim();
     if (customer.isEmpty || items.isEmpty) return;
 
-    final paidAmount = paymentType == 'آجل' ? 0.0 : double.tryParse(paidAmountController.text) ?? 0.0;
+    if (discount < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('الخصم لا يمكن أن يكون سالباً')),
+      );
+      return;
+    }
+    if (total < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('الإجمالي بعد الخصم لا يمكن أن يكون سالباً')),
+      );
+      return;
+    }
+
+    final paidAmount = paymentType == 'آجل'
+        ? 0.0
+        : double.tryParse(paidAmountController.text) ?? 0.0;
     if (paidAmount < 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('المبلغ المدفوع لا يمكن أن يكون سالباً')),
@@ -173,8 +197,8 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
     final dueAmount = total - paidAmount;
     const uuid = Uuid();
     final invoiceId = uuid.v4();
+    final now = DateTime.now().toString();
 
-    // 🔥 تسجيل كل بند في سجل اليوم
     for (final item in items) {
       DayRecordsStore.addRecord({
         'type': 'sale',
@@ -189,17 +213,21 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
         'dueAmount': dueAmount,
         'paymentType': paymentType,
         'wallet': paymentType == 'تحويل' ? selectedWallet ?? '' : 'نقدي',
-        'date': DateTime.now().toString(),
+        'time': now,
+        'discount': discount,
       });
     }
 
     setState(() {
       items.clear();
       customerController.clear();
-      selectedItem = null;
+      _customerAutocompleteKey = UniqueKey();
+      selectedItemName = null;
+      _itemAutocompleteKey = UniqueKey();
       qtyController.clear();
       priceController.clear();
       paidAmountController.text = '0';
+      discountController.text = '0';
       paymentType = 'كاش';
       selectedWallet = null;
       editingIndex = null;
@@ -223,20 +251,26 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
           child: Column(
             children: [
               Autocomplete<String>(
-                optionsBuilder: (text) =>
-                    CustomerStore.searchCustomers(text.text),
-                onSelected: (value) => customerController.text = value,
-                fieldViewBuilder: (context, controller, focusNode, _) {
-                  controller.text = customerController.text;
+                key: _customerAutocompleteKey,
+                optionsBuilder: (textEditingValue) {
+                  if (textEditingValue.text.isEmpty) {
+                    return const Iterable<String>.empty();
+                  }
+                  return CustomerStore.searchCustomers(textEditingValue.text);
+                },
+                onSelected: (value) {
+                  customerController.text = value;
+                },
+                fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
                   return TextField(
                     enabled: dayStarted,
                     controller: controller,
                     focusNode: focusNode,
+                    onChanged: (value) => customerController.text = value,
                     decoration: const InputDecoration(
                       labelText: 'اسم العميل',
                       border: OutlineInputBorder(),
                     ),
-                    onChanged: (value) => customerController.text = value,
                   );
                 },
               ),
@@ -244,26 +278,34 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
               ValueListenableBuilder(
                 valueListenable: InventoryStore.box.listenable(),
                 builder: (context, box, child) {
-                  final availableItems = InventoryStore.searchAvailableItems('');
-                  return DropdownButtonFormField<String>(
-                    value: selectedItem,
-                    decoration: const InputDecoration(
-                      labelText: 'اسم الصنف',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: availableItems.map<DropdownMenuItem<String>>((item) {
-                      return DropdownMenuItem<String>(
-                        value: item['name'] as String,
-                        child: Text(item['name'] as String),
+                  return Autocomplete<String>(
+                    key: _itemAutocompleteKey,
+                    optionsBuilder: (TextEditingValue textEditingValue) {
+                      if (textEditingValue.text.isEmpty) {
+                        return const Iterable<String>.empty();
+                      }
+                      return InventoryStore.searchAvailableItems(textEditingValue.text)
+                          .map((item) => "${item['name']} (المتاح: ${item['qty']})");
+                    },
+                    onSelected: (String selection) {
+                      final itemName = selection.split(' (').first;
+                      setState(() {
+                        selectedItemName = itemName;
+                      });
+                    },
+                    fieldViewBuilder: (BuildContext context,
+                        TextEditingController fieldController,
+                        FocusNode fieldFocusNode,
+                        VoidCallback onFieldSubmitted) {
+                      return TextField(
+                        controller: fieldController,
+                        focusNode: fieldFocusNode,
+                        decoration: const InputDecoration(
+                          labelText: 'اسم الصنف',
+                          border: OutlineInputBorder(),
+                        ),
                       );
-                    }).toList(),
-                    onChanged: dayStarted
-                        ? (value) {
-                            setState(() {
-                              selectedItem = value;
-                            });
-                          }
-                        : null,
+                    },
                   );
                 },
               ),
@@ -271,7 +313,8 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
               TextField(
                 enabled: dayStarted,
                 controller: qtyController,
-                keyboardType: TextInputType.number,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(
                   labelText: 'الكمية',
                   border: OutlineInputBorder(),
@@ -281,7 +324,8 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
               TextField(
                 enabled: dayStarted,
                 controller: priceController,
-                keyboardType: TextInputType.number,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(
                   labelText: 'سعر البيع',
                   border: OutlineInputBorder(),
@@ -290,7 +334,8 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
               const SizedBox(height: 12),
               ElevatedButton(
                 onPressed: dayStarted ? _addItem : null,
-                child: Text(editingIndex != null ? 'تعديل البند' : 'إضافة للفاتورة'),
+                child: Text(
+                    editingIndex != null ? 'تعديل البند' : 'إضافة للفاتورة'),
               ),
               const SizedBox(height: 20),
               ...items.asMap().entries.map((entry) {
@@ -298,14 +343,16 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
                 final item = entry.value;
                 return Card(
                   child: ListTile(
-                    onTap: dayStarted ? () {
-                      setState(() {
-                        editingIndex = index;
-                        selectedItem = item.name;
-                        qtyController.text = item.qty.toString();
-                        priceController.text = item.price.toString();
-                      });
-                    } : null,
+                    onTap: dayStarted
+                        ? () {
+                            setState(() {
+                              editingIndex = index;
+                              selectedItemName = item.name;
+                              qtyController.text = item.qty.toString();
+                              priceController.text = item.price.toString();
+                            });
+                          }
+                        : null,
                     title: Text(item.name),
                     subtitle: Text(
                         'كمية: ${item.qty} | سعر: ${item.price} | إجمالي: ${item.total}'),
@@ -314,9 +361,27 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
               }),
               const SizedBox(height: 20),
               Text(
-                'إجمالي الفاتورة: $total',
-                style: const TextStyle(
-                    fontSize: 18, fontWeight: FontWeight.bold),
+                'الإجمالي: ${subtotal.toStringAsFixed(2)}',
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                enabled: dayStarted,
+                controller: discountController,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'الخصم',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'صافي الفاتورة: ${total.toStringAsFixed(2)}',
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 20),
               DropdownButtonFormField<String>(
@@ -330,18 +395,21 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
                   DropdownMenuItem(value: 'تحويل', child: Text('تحويل')),
                   DropdownMenuItem(value: 'آجل', child: Text('آجل')),
                 ],
-                onChanged: dayStarted ? (value) {
-                  setState(() {
-                    paymentType = value!;
-                  });
-                } : null,
+                onChanged: dayStarted
+                    ? (value) {
+                        setState(() {
+                          paymentType = value!;
+                        });
+                      }
+                    : null,
               ),
               if (paymentType != 'آجل') ...[
                 const SizedBox(height: 12),
                 TextField(
                   enabled: dayStarted,
                   controller: paidAmountController,
-                  keyboardType: TextInputType.number,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
                   decoration: const InputDecoration(
                     labelText: 'المبلغ المدفوع',
                     border: OutlineInputBorder(),
@@ -362,7 +430,9 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
                             child: Text(wallet),
                           ))
                       .toList(),
-                  onChanged: dayStarted ? (value) => setState(() => selectedWallet = value) : null,
+                  onChanged: dayStarted
+                      ? (value) => setState(() => selectedWallet = value)
+                      : null,
                 ),
               ],
               const SizedBox(height: 20),

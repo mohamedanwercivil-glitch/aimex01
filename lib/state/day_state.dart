@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../data/day_records_store.dart';
 import '../services/background_service.dart';
 
 class DayState extends ChangeNotifier {
@@ -16,11 +17,20 @@ class DayState extends ChangeNotifier {
   double totalSales = 0;
   double totalExpenses = 0;
 
+  DateTime? dayStartTime;
+  DateTime? dayEndTime;
+
   Future<void> _loadFromStorage() async {
     dayStarted = box.get('dayStarted', defaultValue: false);
     cashStart = box.get('cashStart', defaultValue: 0.0);
     totalSales = box.get('totalSales', defaultValue: 0.0);
     totalExpenses = box.get('totalExpenses', defaultValue: 0.0);
+
+    final start = box.get('dayStartTime');
+    final end = box.get('dayEndTime');
+
+    if (start != null) dayStartTime = DateTime.parse(start);
+    if (end != null) dayEndTime = DateTime.parse(end);
 
     final prefs = await SharedPreferences.getInstance();
     prefs.setBool('dayStarted', dayStarted);
@@ -32,6 +42,13 @@ class DayState extends ChangeNotifier {
     box.put('totalSales', totalSales);
     box.put('totalExpenses', totalExpenses);
 
+    if (dayStartTime != null) {
+      box.put('dayStartTime', dayStartTime!.toIso8601String());
+    }
+    if (dayEndTime != null) {
+      box.put('dayEndTime', dayEndTime!.toIso8601String());
+    }
+
     final prefs = await SharedPreferences.getInstance();
     prefs.setBool('dayStarted', dayStarted);
   }
@@ -41,6 +58,10 @@ class DayState extends ChangeNotifier {
     cashStart = startCash;
     totalSales = 0;
     totalExpenses = 0;
+
+    dayStartTime = DateTime.now();
+    dayEndTime = null;
+
     _saveToStorage();
     BackgroundService.scheduleEndOfDayTask();
     notifyListeners();
@@ -58,12 +79,11 @@ class DayState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void endDay() {
+  Future<void> endDay() async {
     dayStarted = false;
-    cashStart = 0;
-    totalSales = 0;
-    totalExpenses = 0;
-    _saveToStorage();
+    dayEndTime = DateTime.now();
+
+    await _saveToStorage();
     BackgroundService.cancelEndOfDayTask();
     notifyListeners();
   }

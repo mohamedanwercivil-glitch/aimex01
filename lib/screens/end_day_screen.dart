@@ -20,7 +20,7 @@ class EndDayScreen extends StatelessWidget {
     String path = await ExportExcelService.exportDay();
 
     // 🔥 إنهاء اليوم
-    DayState.instance.endDay();
+    await DayState.instance.endDay();
     BackgroundService.cancelEndOfDayTask();
 
     // Show a dialog with share option

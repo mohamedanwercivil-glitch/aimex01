@@ -6,12 +6,12 @@ class InventoryStore {
   // =========================
   // إضافة شراء
   // =========================
-  static void addItem(String name, int qty, double buyPrice) {
+  static void addItem(String name, double qty, double buyPrice) {
     final item = box.get(name);
 
     if (item != null) {
-      final oldQty = item['quantity'];
-      final oldTotalCost = item['totalCost'];
+      final oldQty = (item['quantity'] as num).toDouble();
+      final oldTotalCost = (item['totalCost'] as num).toDouble();
 
       final newQty = oldQty + qty;
       final newTotalCost = oldTotalCost + (qty * buyPrice);
@@ -31,13 +31,13 @@ class InventoryStore {
   // =========================
   // بيع
   // =========================
-  static bool sellItem(String name, int qty) {
+  static bool sellItem(String name, double qty) {
     final item = box.get(name);
 
     if (item == null) return false;
-    if (item['quantity'] < qty) return false;
+    if ((item['quantity'] as num) < qty) return false;
 
-    final newQty = item['quantity'] - qty;
+    final newQty = (item['quantity'] as num) - qty;
 
     box.put(name, {
       'quantity': newQty,
@@ -50,12 +50,12 @@ class InventoryStore {
   // =========================
   // جلب كمية صنف معين
   // =========================
-  static int getItemQty(String name) {
+  static double getItemQty(String name) {
     final item = box.get(name);
     if (item != null) {
-      return item['quantity'] ?? 0;
+      return (item['quantity'] as num?)?.toDouble() ?? 0.0;
     }
-    return 0;
+    return 0.0;
   }
 
 
@@ -69,18 +69,20 @@ class InventoryStore {
         .toString()
         .toLowerCase()
         .contains(query.toLowerCase()) &&
-        box.get(key)['quantity'] > 0)
+        (box.get(key)['quantity'] as num) > 0)
         .map((key) {
       final item = box.get(key);
+      final quantity = (item['quantity'] as num).toDouble();
+      final totalCost = (item['totalCost'] as num).toDouble();
 
       double avgPrice = 0;
-      if (item['quantity'] > 0) {
-        avgPrice = item['totalCost'] / item['quantity'];
+      if (quantity > 0) {
+        avgPrice = totalCost / quantity;
       }
 
       return {
         'name': key,
-        'quantity': item['quantity'],
+        'qty': quantity,
         'avgPrice': avgPrice,
       };
     }).toList();
@@ -92,15 +94,18 @@ class InventoryStore {
   static List<Map<String, dynamic>> getAllItems() {
     return box.keys.map((key) {
       final item = box.get(key);
+      final quantity = (item['quantity'] as num).toDouble();
+      final totalCost = (item['totalCost'] as num).toDouble();
+
 
       double avgPrice = 0;
-      if (item['quantity'] > 0) {
-        avgPrice = item['totalCost'] / item['quantity'];
+      if (quantity > 0) {
+        avgPrice = totalCost / quantity;
       }
 
       return {
         'name': key,
-        'quantity': item['quantity'],
+        'quantity': quantity,
         'avgPrice': avgPrice,
       };
     }).toList();

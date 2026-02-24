@@ -14,7 +14,7 @@ import '../widgets/searchable_dropdown_field.dart';
 class PurchaseItem {
   final String name;
   final String unit;
-  final int qty;
+  final double qty;
   final double price;
 
   PurchaseItem({
@@ -68,8 +68,8 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
 
   void _addItem() {
     final name = itemController.text.trim();
-    final qty = int.tryParse(qtyController.text) ?? 0;
-    final price = double.tryParse(priceController.text) ?? 0;
+    final qty = double.tryParse(qtyController.text) ?? 0.0;
+    final price = double.tryParse(priceController.text) ?? 0.0;
 
     if (name.isEmpty || qty <= 0 || price <= 0) return;
 
@@ -208,7 +208,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
         'wallet': paymentType == 'تحويل' ? selectedWallet ?? '' : 'نقدي',
         'paidAmount': paidAmount,
         'dueAmount': dueAmount,
-        'date': DateTime.now().toString(),
+        'time': DateTime.now().toString(),
       });
     }
 
@@ -275,7 +275,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
               TextField(
                 enabled: dayStarted,
                 controller: qtyController,
-                keyboardType: TextInputType.number,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(
                   labelText: 'الكمية',
                   border: OutlineInputBorder(),
@@ -285,7 +285,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
               TextField(
                 enabled: dayStarted,
                 controller: priceController,
-                keyboardType: TextInputType.number,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(
                   labelText: 'سعر الوحدة',
                   border: OutlineInputBorder(),
@@ -321,7 +321,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
               }),
               const SizedBox(height: 20),
               Text(
-                'إجمالي الفاتورة: $total',
+                'إجمالي الفاتورة: ${total.toStringAsFixed(2)}',
                 style: const TextStyle(
                     fontSize: 18, fontWeight: FontWeight.bold),
               ),
@@ -369,7 +369,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                 TextField(
                   enabled: dayStarted,
                   controller: paidAmountController,
-                  keyboardType: TextInputType.number,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   decoration: const InputDecoration(
                     labelText: 'المبلغ المدفوع',
                     border: OutlineInputBorder(),
