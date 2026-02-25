@@ -1,5 +1,6 @@
 // ignore_for_file: deprecated_member_use
 
+import 'package:aimex/services/toast_service.dart';
 import 'package:aimex/widgets/selectable_text_field.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -77,7 +78,10 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     final qty = double.tryParse(qtyController.text) ?? 0.0;
     final price = double.tryParse(priceController.text) ?? 0.0;
 
-    if (name.isEmpty || qty <= 0 || price <= 0) return;
+    if (name.isEmpty || qty <= 0 || price <= 0) {
+      ToastService.show('اكمل بيانات الصنف');
+      return;
+    }
 
     setState(() {
       if (editingIndex != null) {
@@ -107,25 +111,22 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
 
   void _saveInvoice() {
     if (!context.read<DayState>().dayStarted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('يجب بدء اليوم أولاً')),
-      );
+      ToastService.show('يجب بدء اليوم أولاً');
       return;
     }
 
     final supplier = supplierController.text.trim();
-    if (supplier.isEmpty || items.isEmpty) return;
+    if (supplier.isEmpty || items.isEmpty) {
+      ToastService.show('اكمل بيانات الفاتورة');
+      return;
+    }
 
     if (discount < 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('الخصم لا يمكن أن يكون سالباً')),
-      );
+      ToastService.show('الخصم لا يمكن أن يكون سالباً');
       return;
     }
     if (total < 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('الإجمالي بعد الخصم لا يمكن أن يكون سالباً')),
-      );
+      ToastService.show('الإجمالي بعد الخصم لا يمكن أن يكون سالباً');
       return;
     }
 
@@ -136,9 +137,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
 
     final paidAmount = double.tryParse(paidAmountController.text) ?? 0.0;
     if (paidAmount < 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('المبلغ المدفوع لا يمكن أن يكون سالباً')),
-      );
+      ToastService.show('المبلغ المدفوع لا يمكن أن يكون سالباً');
       return;
     }
 
@@ -180,9 +179,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     final dueAmount = total - paidAmount;
 
     if (paymentType == 'تحويل' && selectedWallet == null && paidAmount > 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('الرجاء اختيار المحفظة للدفع بالتحويل')),
-      );
+      ToastService.show('الرجاء اختيار المحفظة للدفع بالتحويل');
       return;
     }
 
@@ -204,8 +201,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       );
 
       if (!result.success) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(result.message)));
+        ToastService.show(result.message);
         return;
       }
     }
@@ -243,9 +239,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       selectedUnit = 'صغرى';
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('تم حفظ الفاتورة')),
-    );
+    ToastService.show('تم حفظ الفاتورة');
   }
 
   @override

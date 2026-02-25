@@ -1,3 +1,5 @@
+import 'package:aimex/services/toast_service.dart';
+import 'package:aimex/widgets/selectable_text_field.dart';
 import 'package:flutter/material.dart';
 import '../state/cash_state.dart';
 import '../data/day_records_store.dart';
@@ -25,10 +27,7 @@ class _TransferScreenState
     if (fromBox == null ||
         toBox == null ||
         amount <= 0) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(
-          content:
-          Text('اكمل البيانات')));
+      ToastService.show('اكمل البيانات');
       return;
     }
 
@@ -40,10 +39,7 @@ class _TransferScreenState
     );
 
     if (!success) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(
-          content: Text(
-              'رصيد غير كافي أو خطأ في البيانات')));
+      ToastService.show('رصيد غير كافي أو خطأ في البيانات');
       return;
     }
 
@@ -111,16 +107,11 @@ class _TransferScreenState
                   toBox = value),
             ),
             const SizedBox(height: 12),
-            TextField(
+            SelectableTextField(
               controller: amountController,
               keyboardType:
               TextInputType.number,
-              decoration:
-              const InputDecoration(
-                labelText: 'المبلغ',
-                border:
-                OutlineInputBorder(),
-              ),
+              labelText: 'المبلغ',
             ),
             const SizedBox(height: 20),
             SizedBox(

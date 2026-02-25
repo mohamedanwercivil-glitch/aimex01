@@ -3,51 +3,17 @@ import 'package:excel/excel.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../data/day_records_store.dart';
 import '../state/cash_state.dart';
 
 class ExportExcelService {
   static Future<String> exportDay() async {
     var now = DateTime.now();
-    String reportDate = DateFormat('dd-MM-yyyy hh:mm a').format(now);
+    String reportDate = DateFormat('dd-MM-yyyy hh_mm_a').format(now);
 
     var excel = Excel.createExcel();
     var records = DayRecordsStore.getAll();
-
-    // =========================
-    // فلترة حسب بداية ونهاية اليوم الحالية فقط
-    // =========================
-    final dayBox = Hive.box('dayBox');
-    final startString = dayBox.get('dayStartTime');
-    final endString = dayBox.get('dayEndTime');
-
-    if (startString != null && startString.isNotEmpty) {
-      final startTime = DateTime.tryParse(startString);
-
-      if (startTime != null) {
-        final endTime = (endString != null && endString.isNotEmpty)
-            ? (DateTime.tryParse(endString) ?? DateTime.now())
-            : DateTime.now();
-
-        records = records.where((r) {
-          final timeString = r['time'] ?? r['date'];
-          if (timeString == null) return false;
-
-          final t = DateTime.tryParse(timeString);
-          if (t == null) {
-            return false;
-          }
-
-          // Use UTC for all comparisons to avoid timezone issues
-          final recordTime = t.toUtc();
-          final effectiveStartTime = startTime.toUtc();
-          final effectiveEndTime = endTime.toUtc();
-
-          return recordTime.isAfter(effectiveStartTime.subtract(const Duration(milliseconds: 1))) &&
-              recordTime.isBefore(effectiveEndTime.add(const Duration(milliseconds: 1)));
-        }).toList();
-      }
-    }
 
     excel.delete('Sheet1');
 
@@ -56,7 +22,6 @@ class ExportExcelService {
     // =========================
     var salesSheet = excel['المبيعات'];
     var salesRecords = records.where((e) => e['type'] == 'sale').toList();
-
     final salesByInvoice = <dynamic, List<Map<String, dynamic>>>{};
     for (final record in salesRecords) {
       final key = record['invoiceId'] ?? record['time'] ?? record['date'];
@@ -115,7 +80,6 @@ class ExportExcelService {
     var purchasesSheet = excel['المشتريات'];
     var purchaseRecords =
         records.where((e) => e['type'] == 'purchase').toList();
-
     final purchasesByInvoice = <dynamic, List<Map<String, dynamic>>>{};
     for (final record in purchaseRecords) {
       final key = record['invoiceId'] ?? record['time'] ?? record['date'];
@@ -324,18 +288,19 @@ class ExportExcelService {
       summarySheet.appendRow([entry.key, entry.value]);
     }
 
-    final baseDir = await getExternalStorageDirectory();
-    final aimexDir = Directory("${baseDir!.path}/AIMEX");
+    if (await Permission.manageExternalStorage.request().isGranted) {
+      String downloadsPath = '/storage/emulated/0/Download';
+      final reportDir = Directory(downloadsPath + "/التقرير اليومي");
 
-    if (!await aimexDir.exists()) {
-      await aimexDir.create(recursive: true);
+      if (!await reportDir.exists()) {
+        await reportDir.create(recursive: true);
+      }
+
+      final filePath = "${reportDir.path}/تقرير يوم $reportDate.xlsx";
+      final file = File(filePath);
+      await file.writeAsBytes(excel.encode()!, flush: true);
+      return filePath;
     }
-
-    final filePath = "${aimexDir.path}/تقرير يوم $reportDate.xlsx";
-
-    final file = File(filePath);
-    await file.writeAsBytes(excel.encode()!, flush: true);
-
-    return filePath;
+    return "";
   }
 }

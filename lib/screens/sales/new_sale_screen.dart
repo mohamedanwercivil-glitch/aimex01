@@ -1,3 +1,4 @@
+import 'package:aimex/services/toast_service.dart';
 import 'package:aimex/widgets/selectable_text_field.dart';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -80,15 +81,15 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
     final qty = double.tryParse(qtyController.text) ?? 0.0;
     final price = double.tryParse(priceController.text) ?? 0.0;
 
-    if (name == null || name.isEmpty || qty <= 0 || price <= 0) return;
+    if (name == null || name.isEmpty || qty <= 0 || price <= 0) {
+      ToastService.show('اكمل بيانات الصنف');
+      return;
+    }
 
     final availableQty = InventoryStore.getItemQty(name);
     if (qty > availableQty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(
-                'الكمية غير كافية للصنف $name. الكمية المتاحة: $availableQty')),
-      );
+      ToastService.show(
+          'الكمية غير كافية للصنف $name. الكمية المتاحة: $availableQty');
       return;
     }
 
@@ -108,25 +109,22 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
 
   void _saveSale() {
     if (!context.read<DayState>().dayStarted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('يجب بدء اليوم أولاً')),
-      );
+      ToastService.show('يجب بدء اليوم أولاً');
       return;
     }
 
     final customer = customerController.text.trim();
-    if (customer.isEmpty || items.isEmpty) return;
+    if (customer.isEmpty || items.isEmpty) {
+      ToastService.show('اكمل بيانات الفاتورة');
+      return;
+    }
 
     if (discount < 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('الخصم لا يمكن أن يكون سالباً')),
-      );
+      ToastService.show('الخصم لا يمكن أن يكون سالباً');
       return;
     }
     if (total < 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('الإجمالي بعد الخصم لا يمكن أن يكون سالباً')),
-      );
+      ToastService.show('الإجمالي بعد الخصم لا يمكن أن يكون سالباً');
       return;
     }
 
@@ -134,9 +132,7 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
         ? 0.0
         : double.tryParse(paidAmountController.text) ?? 0.0;
     if (paidAmount < 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('المبلغ المدفوع لا يمكن أن يكون سالباً')),
-      );
+      ToastService.show('المبلغ المدفوع لا يمكن أن يكون سالباً');
       return;
     }
 
@@ -179,9 +175,7 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
     for (final item in items) {
       final success = InventoryStore.sellItem(item.name, item.qty);
       if (!success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('الكمية غير كافية للصنف ${item.name}')),
-        );
+        ToastService.show('الكمية غير كافية للصنف ${item.name}');
         return;
       }
     }
@@ -195,8 +189,7 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
         walletName: paymentType == 'تحويل' ? selectedWallet : null,
       );
       if (!result.success) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(result.message)));
+        ToastService.show(result.message);
         return;
       }
       context.read<DayState>().addSale(paidAmount);
@@ -241,9 +234,7 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
       editingIndex = null;
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('تم حفظ الفاتورة')),
-    );
+    ToastService.show('تم حفظ الفاتورة');
   }
 
   @override
@@ -270,15 +261,12 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
                   customerController.text = value;
                 },
                 fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-                  return TextField(
+                  return SelectableTextField(
                     enabled: dayStarted,
                     controller: controller,
                     focusNode: focusNode,
                     onChanged: (value) => customerController.text = value,
-                    decoration: const InputDecoration(
-                      labelText: 'اسم العميل',
-                      border: OutlineInputBorder(),
-                    ),
+                    labelText: 'اسم العميل',
                   );
                 },
               ),
@@ -333,13 +321,10 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
                         TextEditingController fieldController,
                         FocusNode fieldFocusNode,
                         VoidCallback onFieldSubmitted) {
-                      return TextField(
+                      return SelectableTextField(
                         controller: fieldController,
                         focusNode: fieldFocusNode,
-                        decoration: const InputDecoration(
-                          labelText: 'اسم الصنف',
-                          border: OutlineInputBorder(),
-                        ),
+                        labelText: 'اسم الصنف',
                       );
                     },
                   );
@@ -412,7 +397,6 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
               ),
               const SizedBox(height: 20),
               DropdownButtonFormField<String>(
-                value: paymentType,
                 decoration: const InputDecoration(
                   labelText: 'طريقة الدفع',
                   border: OutlineInputBorder(),
@@ -429,6 +413,7 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
                         });
                       }
                     : null,
+                value: paymentType,
               ),
               if (paymentType != 'آجل') ...[
                 const SizedBox(height: 12),
@@ -443,7 +428,6 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
               if (paymentType == 'تحويل') ...[
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
-                  value: selectedWallet,
                   decoration: const InputDecoration(
                     labelText: 'اختر المحفظة',
                     border: OutlineInputBorder(),
@@ -457,6 +441,7 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
                   onChanged: dayStarted
                       ? (value) => setState(() => selectedWallet = value)
                       : null,
+                  value: selectedWallet,
                 ),
               ],
               const SizedBox(height: 20),

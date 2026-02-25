@@ -1,3 +1,5 @@
+import 'package:aimex/services/toast_service.dart';
+import 'package:aimex/widgets/selectable_text_field.dart';
 import 'package:flutter/material.dart';
 import '../services/finance_service.dart';
 import '../state/day_state.dart';
@@ -20,7 +22,10 @@ class _ExpensesScreenState
   String? selectedWallet;
 
   void _saveExpense() {
-    if (!DayState.instance.dayStarted) return;
+    if (!DayState.instance.dayStarted) {
+      ToastService.show('يجب بدء اليوم أولاً');
+      return;
+    }
 
     final amount =
         double.tryParse(amountController.text) ?? 0;
@@ -28,10 +33,7 @@ class _ExpensesScreenState
     descriptionController.text.trim();
 
     if (amount <= 0 || description.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('ادخل مبلغ وبيان صحيح')),
-      );
+      ToastService.show('ادخل مبلغ وبيان صحيح');
       return;
     }
 
@@ -42,9 +44,7 @@ class _ExpensesScreenState
     );
 
     if (!result.success) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(
-          SnackBar(content: Text(result.message)));
+      ToastService.show(result.message);
       return;
     }
 
@@ -62,10 +62,7 @@ class _ExpensesScreenState
     amountController.clear();
     descriptionController.clear();
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-          content: Text('تم تسجيل المصروف')),
-    );
+    ToastService.show('تم تسجيل المصروف');
   }
 
   @override
@@ -79,26 +76,16 @@ class _ExpensesScreenState
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            TextField(
+            SelectableTextField(
               controller: amountController,
               keyboardType:
               TextInputType.number,
-              decoration:
-              const InputDecoration(
-                labelText: 'المبلغ',
-                border:
-                OutlineInputBorder(),
-              ),
+              labelText: 'المبلغ',
             ),
             const SizedBox(height: 12),
-            TextField(
+            SelectableTextField(
               controller: descriptionController,
-              decoration:
-              const InputDecoration(
-                labelText: 'بيان المصروف',
-                border:
-                OutlineInputBorder(),
-              ),
+              labelText: 'بيان المصروف',
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(

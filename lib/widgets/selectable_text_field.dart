@@ -6,6 +6,7 @@ class SelectableTextField extends StatefulWidget {
   final TextInputType? keyboardType;
   final bool enabled;
   final ValueChanged<String>? onChanged;
+  final FocusNode? focusNode;
 
   const SelectableTextField({
     super.key,
@@ -14,6 +15,7 @@ class SelectableTextField extends StatefulWidget {
     this.keyboardType,
     this.enabled = true,
     this.onChanged,
+    this.focusNode,
   });
 
   @override
@@ -21,29 +23,35 @@ class SelectableTextField extends StatefulWidget {
 }
 
 class _SelectableTextFieldState extends State<SelectableTextField> {
-  final FocusNode _focusNode = FocusNode();
+  late FocusNode _focusNode;
+  bool _isDisposing = false;
 
   @override
   void initState() {
     super.initState();
+    _focusNode = widget.focusNode ?? FocusNode();
     _focusNode.addListener(_onFocusChange);
   }
 
   @override
   void dispose() {
+    _isDisposing = true;
     _focusNode.removeListener(_onFocusChange);
-    _focusNode.dispose();
+    if (widget.focusNode == null) {
+      _focusNode.dispose();
+    }
     super.dispose();
   }
 
   void _onFocusChange() {
-    if (_focusNode.hasFocus && widget.controller.text.isNotEmpty) {
-      // Use a post-frame callback to ensure the field is rendered before selection
+    if (_focusNode.hasFocus) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        widget.controller.selection = TextSelection(
-          baseOffset: 0,
-          extentOffset: widget.controller.text.length,
-        );
+        if (!_isDisposing && mounted && _focusNode.hasFocus) {
+          widget.controller.selection = TextSelection(
+            baseOffset: 0,
+            extentOffset: widget.controller.text.length,
+          );
+        }
       });
     }
   }
