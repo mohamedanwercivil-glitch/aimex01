@@ -45,6 +45,7 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
   final priceController = TextEditingController();
   final paidAmountController = TextEditingController();
   final discountController = TextEditingController();
+  final _customerFocusNode = FocusNode();
 
   String? selectedItemName;
   String paymentType = 'كاش';
@@ -73,6 +74,7 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
     priceController.dispose();
     paidAmountController.dispose();
     discountController.dispose();
+    _customerFocusNode.dispose();
     super.dispose();
   }
 
@@ -233,6 +235,7 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
       selectedWallet = null;
       editingIndex = null;
     });
+    _customerFocusNode.requestFocus();
 
     ToastService.show('تم حفظ الفاتورة');
   }
@@ -264,7 +267,7 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
                   return SelectableTextField(
                     enabled: dayStarted,
                     controller: controller,
-                    focusNode: focusNode,
+                    focusNode: _customerFocusNode,
                     onChanged: (value) => customerController.text = value,
                     labelText: 'اسم العميل',
                   );

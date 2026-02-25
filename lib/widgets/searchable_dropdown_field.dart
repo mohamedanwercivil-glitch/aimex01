@@ -5,6 +5,7 @@ class SearchableDropdownField extends StatefulWidget {
   final String label;
   final List<String> Function(String) onSearch;
   final bool enabled;
+  final FocusNode? focusNode;
 
   const SearchableDropdownField({
     super.key,
@@ -12,6 +13,7 @@ class SearchableDropdownField extends StatefulWidget {
     required this.label,
     required this.onSearch,
     this.enabled = true,
+    this.focusNode,
   });
 
   @override
@@ -21,8 +23,14 @@ class SearchableDropdownField extends StatefulWidget {
 
 class _SearchableDropdownFieldState
     extends State<SearchableDropdownField> {
-  final FocusNode _focusNode = FocusNode();
+  late final FocusNode _focusNode;
   List<String> suggestions = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode = widget.focusNode ?? FocusNode();
+  }
 
   void _updateSuggestions(String value) {
     setState(() {

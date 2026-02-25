@@ -43,6 +43,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   final priceController = TextEditingController();
   final paidAmountController = TextEditingController();
   final discountController = TextEditingController(); // Added discount controller
+  final _supplierFocusNode = FocusNode();
 
   String selectedUnit = 'صغرى';
   String paymentType = 'كاش';
@@ -70,6 +71,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     priceController.dispose();
     paidAmountController.dispose();
     discountController.dispose(); // Dispose discount controller
+    _supplierFocusNode.dispose();
     super.dispose();
   }
 
@@ -238,6 +240,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       paymentType = 'كاش';
       selectedUnit = 'صغرى';
     });
+    _supplierFocusNode.requestFocus();
 
     ToastService.show('تم حفظ الفاتورة');
   }
@@ -255,6 +258,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
           child: Column(
             children: [
               SearchableDropdownField(
+                focusNode: _supplierFocusNode,
                 enabled: dayStarted,
                 controller: supplierController,
                 label: 'اسم المورد',
