@@ -185,6 +185,60 @@ class ExportExcelService {
 
       invoiceNumPurchaseAuto++;
     }
+    
+    // =========================
+    // المبيعات اوتو
+    // =========================
+    var salesAutoSheet = excel['المبيعات اوتو'];
+    salesAutoSheet.appendRow([
+      'رقم الفاتورة',
+      'اسم العميل',
+      'التاريخ',
+      'اسم الصنف',
+      'الكميه',
+      'السعر',
+      'المدفوع',
+      'الخزينه',
+      'الخصم'
+    ]);
+
+    var invoiceNumSaleAuto = 1;
+    for (final invoiceItems in salesByInvoice.values) {
+      if (invoiceItems.isEmpty) continue;
+      final first = invoiceItems.first;
+
+      final formattedDate = first['time'] != null && (first['time'] as String).isNotEmpty
+          ? DateFormat('d/M/y').format(DateTime.parse(first['time']))
+          : DateFormat('d/M/y').format(now);
+
+      for (var item in invoiceItems) {
+        salesAutoSheet.appendRow([
+          'فاتورة رقم: $invoiceNumSaleAuto',
+          first['customer'],
+          formattedDate,
+          item['item'],
+          item['qty'],
+          item['price'],
+          null,
+          null,
+          null
+        ]);
+      }
+      // Summary row for the invoice
+      salesAutoSheet.appendRow([
+        'فاتورة رقم: $invoiceNumSaleAuto',
+        null,
+        null,
+        null,
+        null,
+        null,
+        first['paidAmount'],
+        first['wallet'],
+        first['discount'] ?? 0
+      ]);
+
+      invoiceNumSaleAuto++;
+    }
 
     // =========================
     // المصروفات

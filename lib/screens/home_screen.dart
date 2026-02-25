@@ -1,3 +1,4 @@
+import 'package:aimex/data/inventory_store.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../state/day_state.dart';
@@ -112,6 +113,17 @@ class HomeScreen extends StatelessWidget {
                           }
                         : null,
                     child: const Text('إنهاء اليوم'),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      await InventoryStore.importFromExcel();
+                    },
+                    child: const Text('استيراد من اكسل'),
                   ),
                 ),
               ],

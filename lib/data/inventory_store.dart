@@ -1,7 +1,45 @@
+import 'dart:io';
+import 'package:excel/excel.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:hive/hive.dart';
 
 class InventoryStore {
   static final Box box = Hive.box('inventoryBox');
+
+  // =========================
+  // Import from Excel
+  // =========================
+  static Future<void> importFromExcel() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['xlsx'],
+    );
+
+    if (result != null) {
+      final file = File(result.files.single.path!);
+      final bytes = await file.readAsBytes();
+      final excel = Excel.decodeBytes(bytes);
+
+      // Clear existing inventory
+      await box.clear();
+
+      final sheet = excel.tables[excel.tables.keys.first];
+
+      if (sheet != null) {
+        for (var i = 1; i < sheet.rows.length; i++) { // Start from 1 to skip header
+          final row = sheet.rows[i];
+          // Corrected column order based on the screenshot
+          final buyPrice = double.tryParse(row[0]?.value.toString() ?? ''); // Column A
+          final qty = double.tryParse(row[1]?.value.toString() ?? '');      // Column B
+          final name = row[2]?.value.toString();                            // Column C
+
+          if (name != null && qty != null && buyPrice != null) {
+            addItem(name, qty, buyPrice);
+          }
+        }
+      }
+    }
+  }
 
   // =========================
   // إضافة شراء
