@@ -1,8 +1,12 @@
+import 'dart:io';
+import 'package:aimex/services/pdf_service.dart';
 import 'package:aimex/services/toast_service.dart';
 import 'package:aimex/widgets/selectable_text_field.dart';
+import 'package:aimex/widgets/searchable_dropdown_field.dart';
 import 'package:flutter/material.dart';
-import 'package:hive_flutter/hive_flutter.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:uuid/uuid.dart';
 import '../../data/inventory_store.dart';
 import '../../data/customer_store.dart';
@@ -25,13 +29,6 @@ class SaleItem {
   double get total => qty * price;
 }
 
-class _DisplayableSaleItem {
-  final String name;
-  final double qty;
-
-  _DisplayableSaleItem({required this.name, required this.qty});
-}
-
 class NewSaleScreen extends StatefulWidget {
   const NewSaleScreen({super.key});
 
@@ -41,20 +38,23 @@ class NewSaleScreen extends StatefulWidget {
 
 class _NewSaleScreenState extends State<NewSaleScreen> {
   final customerController = TextEditingController();
+  final itemController = TextEditingController();
   final qtyController = TextEditingController();
   final priceController = TextEditingController();
   final paidAmountController = TextEditingController();
   final discountController = TextEditingController();
   final _customerFocusNode = FocusNode();
+  final _itemFocusNode = FocusNode();
+  final _qtyFocusNode = FocusNode();
+  final _priceFocusNode = FocusNode();
+  final _discountFocusNode = FocusNode();
+  final _paidAmountFocusNode = FocusNode();
 
-  String? selectedItemName;
   String paymentType = 'كاش';
   String? selectedWallet;
 
   final List<SaleItem> items = [];
   int? editingIndex;
-  Key _customerAutocompleteKey = UniqueKey();
-  Key _itemAutocompleteKey = UniqueKey();
 
   double get subtotal => items.fold(0.0, (sum, item) => sum + item.total);
   double get discount => double.tryParse(discountController.text) ?? 0.0;
@@ -70,20 +70,26 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
   @override
   void dispose() {
     customerController.dispose();
+    itemController.dispose();
     qtyController.dispose();
     priceController.dispose();
     paidAmountController.dispose();
     discountController.dispose();
     _customerFocusNode.dispose();
+    _itemFocusNode.dispose();
+    _qtyFocusNode.dispose();
+    _priceFocusNode.dispose();
+    _discountFocusNode.dispose();
+    _paidAmountFocusNode.dispose();
     super.dispose();
   }
 
   void _addItem() {
-    final name = selectedItemName;
+    final name = itemController.text.trim();
     final qty = double.tryParse(qtyController.text) ?? 0.0;
     final price = double.tryParse(priceController.text) ?? 0.0;
 
-    if (name == null || name.isEmpty || qty <= 0 || price <= 0) {
+    if (name.isEmpty || qty <= 0 || price <= 0) {
       ToastService.show('اكمل بيانات الصنف');
       return;
     }
@@ -102,14 +108,14 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
       } else {
         items.add(SaleItem(name: name, qty: qty, price: price));
       }
-      selectedItemName = null;
-      _itemAutocompleteKey = UniqueKey(); // Reset Autocomplete
+      itemController.clear();
       qtyController.clear();
       priceController.clear();
+      _itemFocusNode.requestFocus();
     });
   }
 
-  void _saveSale() {
+  Future<void> _saveSale() async {
     if (!context.read<DayState>().dayStarted) {
       ToastService.show('يجب بدء اليوم أولاً');
       return;
@@ -141,9 +147,9 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
     final dueAmount = total - paidAmount;
 
     if (dueAmount > 0 && paymentType != 'آجل') {
-      _showConfirmationDialog(dueAmount, () => _performSave(paidAmount));
+      _showConfirmationDialog(dueAmount, () async => await _performSave(paidAmount));
     } else {
-      _performSave(paidAmount);
+      await _performSave(paidAmount);
     }
   }
 
@@ -171,7 +177,7 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
     );
   }
 
-  void _performSave(double paidAmount) {
+  Future<void> _performSave(double paidAmount) async {
     final customer = customerController.text.trim();
 
     for (final item in items) {
@@ -199,13 +205,15 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
 
     final dueAmount = total - paidAmount;
     const uuid = Uuid();
-    final invoiceId = uuid.v4();
+    final invoiceId = uuid.v4(); // المعرف الداخلي
+    final invoiceNumber = DayRecordsStore.getNextInvoiceNumber('sale').toString(); // الرقم التسلسلي للـ PDF والإكسيل
     final now = DateTime.now().toString();
 
     for (final item in items) {
       DayRecordsStore.addRecord({
         'type': 'sale',
         'invoiceId': invoiceId,
+        'invoiceNumber': invoiceNumber,
         'customer': customer,
         'item': item.name,
         'qty': item.qty,
@@ -221,12 +229,18 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
       });
     }
 
+    // Generate and share PDF using the serial invoice number
+    await _generateAndSharePdf(
+      customerName: customer,
+      invoiceId: invoiceNumber, // نمرر هنا الرقم التسلسلي (مثلاً "1")
+      paidAmount: paidAmount,
+      dueAmount: dueAmount,
+    );
+
     setState(() {
       items.clear();
       customerController.clear();
-      _customerAutocompleteKey = UniqueKey();
-      selectedItemName = null;
-      _itemAutocompleteKey = UniqueKey();
+      itemController.clear();
       qtyController.clear();
       priceController.clear();
       paidAmountController.text = '0';
@@ -238,6 +252,33 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
     _customerFocusNode.requestFocus();
 
     ToastService.show('تم حفظ الفاتورة');
+  }
+
+  Future<void> _generateAndSharePdf({
+    required String customerName,
+    required String invoiceId,
+    required double paidAmount,
+    required double dueAmount,
+  }) async {
+    final pdfData = await PdfService.generateInvoice(
+      customerName: customerName,
+      items: items,
+      subtotal: subtotal,
+      discount: discount,
+      total: total,
+      paidAmount: paidAmount,
+      dueAmount: dueAmount,
+      invoiceId: invoiceId,
+    );
+
+    final tempDir = await getTemporaryDirectory();
+    final file = File('${tempDir.path}/invoice_$invoiceId.pdf');
+    await file.writeAsBytes(pdfData);
+
+    await Share.shareXFiles(
+      [XFile(file.path)],
+      text: 'فاتورة بيع رقم $invoiceId للعميل: $customerName',
+    );
   }
 
   @override
@@ -252,102 +293,53 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
         child: SingleChildScrollView(
           child: Column(
             children: [
-              Autocomplete<String>(
-                key: _customerAutocompleteKey,
-                optionsBuilder: (textEditingValue) {
-                  if (textEditingValue.text.isEmpty) {
-                    return const Iterable<String>.empty();
-                  }
-                  return CustomerStore.searchCustomers(textEditingValue.text);
-                },
-                onSelected: (value) {
-                  customerController.text = value;
-                },
-                fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-                  return SelectableTextField(
-                    enabled: dayStarted,
-                    controller: controller,
-                    focusNode: _customerFocusNode,
-                    onChanged: (value) => customerController.text = value,
-                    labelText: 'اسم العميل',
-                  );
-                },
+              SearchableDropdownField(
+                focusNode: _customerFocusNode,
+                enabled: dayStarted,
+                controller: customerController,
+                label: 'اسم العميل',
+                onSearch: (value) => CustomerStore.searchCustomers(value),
+                onSelected: (_) => _itemFocusNode.requestFocus(),
+                textInputAction: TextInputAction.next,
               ),
               const SizedBox(height: 12),
-              ValueListenableBuilder(
-                valueListenable: InventoryStore.box.listenable(),
-                builder: (context, box, child) {
-                  return Autocomplete<_DisplayableSaleItem>(
-                    key: _itemAutocompleteKey,
-                    displayStringForOption: (option) => option.name,
-                    optionsBuilder: (TextEditingValue textEditingValue) {
-                      if (textEditingValue.text.isEmpty) {
-                        return const Iterable<_DisplayableSaleItem>.empty();
-                      }
-                      return InventoryStore.searchAvailableItems(textEditingValue.text)
-                          .map((item) => _DisplayableSaleItem(name: item['name'] as String, qty: item['qty'] as double));
-                    },
-                    onSelected: (_DisplayableSaleItem selection) {
-                      setState(() {
-                        selectedItemName = selection.name;
-                      });
-                    },
-                    optionsViewBuilder: (context, onSelected, options) {
-                      return Align(
-                        alignment: Alignment.topLeft,
-                        child: Material(
-                          elevation: 4.0,
-                          child: SizedBox(
-                            width: MediaQuery.of(context).size.width - 32,
-                            child: ListView.builder(
-                              padding: EdgeInsets.zero,
-                              itemCount: options.length,
-                              shrinkWrap: true,
-                              itemBuilder: (BuildContext context, int index) {
-                                final option = options.elementAt(index);
-                                return InkWell(
-                                  onTap: () {
-                                    onSelected(option);
-                                  },
-                                  child: ListTile(
-                                    title: Text(option.name),
-                                    trailing: Text('المتاح: ${option.qty}'),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                    fieldViewBuilder: (BuildContext context,
-                        TextEditingController fieldController,
-                        FocusNode fieldFocusNode,
-                        VoidCallback onFieldSubmitted) {
-                      return SelectableTextField(
-                        controller: fieldController,
-                        focusNode: fieldFocusNode,
-                        labelText: 'اسم الصنف',
-                      );
-                    },
-                  );
+              SearchableDropdownField(
+                focusNode: _itemFocusNode,
+                enabled: dayStarted,
+                controller: itemController,
+                label: 'اسم الصنف',
+                onSearch: (value) => InventoryStore.searchAvailableItems(value)
+                    .map((e) => "${e['name']} (المتاح: ${e['qty']})")
+                    .toList(),
+                onSelected: (value) {
+                  // Extract only the item name from the selected string
+                  final name = value.split(' (المتاح:')[0];
+                  itemController.text = name;
+                  _qtyFocusNode.requestFocus();
                 },
+                textInputAction: TextInputAction.next,
               ),
               const SizedBox(height: 12),
               SelectableTextField(
                 enabled: dayStarted,
                 controller: qtyController,
+                focusNode: _qtyFocusNode,
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
                 labelText: 'الكمية',
+                textInputAction: TextInputAction.next,
+                onSubmitted: (_) => _priceFocusNode.requestFocus(),
               ),
               const SizedBox(height: 12),
               SelectableTextField(
                 enabled: dayStarted,
                 controller: priceController,
+                focusNode: _priceFocusNode,
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
                 labelText: 'سعر البيع',
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _addItem(),
               ),
               const SizedBox(height: 12),
               ElevatedButton(
@@ -365,9 +357,10 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
                         ? () {
                             setState(() {
                               editingIndex = index;
-                              selectedItemName = item.name;
+                              itemController.text = item.name;
                               qtyController.text = item.qty.toString();
                               priceController.text = item.price.toString();
+                              _itemFocusNode.requestFocus();
                             });
                           }
                         : null,
@@ -387,10 +380,13 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
               SelectableTextField(
                 enabled: dayStarted,
                 controller: discountController,
+                focusNode: _discountFocusNode,
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
                 labelText: 'الخصم',
+                textInputAction: TextInputAction.next,
                 onChanged: (_) => setState(() {}),
+                onSubmitted: (_) => _paidAmountFocusNode.requestFocus(),
               ),
               const SizedBox(height: 12),
               Text(
@@ -400,6 +396,7 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
               ),
               const SizedBox(height: 20),
               DropdownButtonFormField<String>(
+                value: paymentType,
                 decoration: const InputDecoration(
                   labelText: 'طريقة الدفع',
                   border: OutlineInputBorder(),
@@ -413,24 +410,30 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
                     ? (value) {
                         setState(() {
                           paymentType = value!;
+                          if (paymentType != 'آجل') {
+                            _paidAmountFocusNode.requestFocus();
+                          }
                         });
                       }
                     : null,
-                value: paymentType,
               ),
               if (paymentType != 'آجل') ...[
                 const SizedBox(height: 12),
                 SelectableTextField(
                   enabled: dayStarted,
                   controller: paidAmountController,
+                  focusNode: _paidAmountFocusNode,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
                   labelText: 'المبلغ المدفوع',
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => _saveSale(),
                 ),
               ],
               if (paymentType == 'تحويل') ...[
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
+                  value: selectedWallet,
                   decoration: const InputDecoration(
                     labelText: 'اختر المحفظة',
                     border: OutlineInputBorder(),
@@ -444,7 +447,6 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
                   onChanged: dayStarted
                       ? (value) => setState(() => selectedWallet = value)
                       : null,
-                  value: selectedWallet,
                 ),
               ],
               const SizedBox(height: 20),

@@ -1,3 +1,4 @@
+import 'package:aimex/models/supplier.dart';
 import 'package:aimex/services/toast_service.dart';
 import 'package:aimex/widgets/selectable_text_field.dart';
 import 'package:flutter/material.dart';
@@ -5,60 +6,46 @@ import '../services/finance_service.dart';
 import '../state/day_state.dart';
 import '../data/day_records_store.dart';
 import '../state/cash_state.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
-class ExpensesScreen extends StatefulWidget {
-  const ExpensesScreen({super.key});
+
+class SupplierSettlementScreen extends StatefulWidget {
+  const SupplierSettlementScreen({super.key});
 
   @override
-  State<ExpensesScreen> createState() =>
-      _ExpensesScreenState();
+  State<SupplierSettlementScreen> createState() =>
+      _SupplierSettlementScreenState();
 }
 
-class _ExpensesScreenState
-    extends State<ExpensesScreen> {
+class _SupplierSettlementScreenState
+    extends State<SupplierSettlementScreen> {
 
+  final supplierController = TextEditingController();
   final amountController = TextEditingController();
-  final descriptionController = TextEditingController();
   String? selectedWallet;
+  final _supplierFocusNode = FocusNode();
   final _amountFocusNode = FocusNode();
-  final _descriptionFocusNode = FocusNode();
-  final _saveButtonFocusNode = FocusNode();
-
-  @override
-  void initState() {
-    super.initState();
-    // Set 'نقدي' as the default selected wallet
-    selectedWallet = 'نقدي';
-  }
 
   @override
   void dispose() {
+    supplierController.dispose();
     amountController.dispose();
-    descriptionController.dispose();
+    _supplierFocusNode.dispose();
     _amountFocusNode.dispose();
-    _descriptionFocusNode.dispose();
-    _saveButtonFocusNode.dispose();
     super.dispose();
   }
 
-  void _saveExpense() {
+  void _saveSettlement() {
     if (!DayState.instance.dayStarted) {
       ToastService.show('يجب بدء اليوم أولاً');
       return;
     }
 
-    final amount =
-        double.tryParse(amountController.text) ?? 0;
-    final description =
-    descriptionController.text.trim();
+    final supplier = supplierController.text.trim();
+    final amount = double.tryParse(amountController.text) ?? 0;
 
-    if (amount <= 0 || description.isEmpty) {
-      ToastService.show('ادخل مبلغ وبيان صحيح');
-      return;
-    }
-
-    if (selectedWallet == null) {
-      ToastService.show('الرجاء اختيار الخزنة');
+    if (supplier.isEmpty || amount <= 0) {
+      ToastService.show('ادخل اسم المورد ومبلغ صحيح');
       return;
     }
 
@@ -73,22 +60,21 @@ class _ExpensesScreenState
       return;
     }
 
-    // 🔥 تسجيل المصروف في سجل اليوم
     DayRecordsStore.addRecord({
-      'type': 'expense',
+      'type': 'supplier_settlement',
+      'supplier': supplier,
       'amount': amount,
-      'description': description,
       'wallet': selectedWallet ?? 'نقدي',
       'date': DateTime.now().toString(),
     });
 
-    DayState.instance.addExpense(amount);
+    //TODO: I will add a supplier store later.
 
     amountController.clear();
-    descriptionController.clear();
-    _amountFocusNode.requestFocus();
+    supplierController.clear();
+    _supplierFocusNode.requestFocus();
 
-    ToastService.show('تم تسجيل المصروف');
+    ToastService.show('تم تسجيل سداد المورد');
   }
 
   @override
@@ -97,28 +83,27 @@ class _ExpensesScreenState
 
     return Scaffold(
       appBar:
-      AppBar(title: const Text('مصروفات الشغل')),
+      AppBar(title: const Text('سداد الموردين')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
             SelectableTextField(
-              autofocus: true,
+              controller: supplierController,
+              focusNode: _supplierFocusNode,
+              labelText: 'اسم المورد',
+              textInputAction: TextInputAction.next,
+              onSubmitted: (_) => _amountFocusNode.requestFocus(),
+            ),
+            const SizedBox(height: 12),
+            SelectableTextField(
               controller: amountController,
               focusNode: _amountFocusNode,
               keyboardType:
               TextInputType.number,
-              labelText: 'المبلغ',
-              textInputAction: TextInputAction.next,
-              onSubmitted: (_) => _descriptionFocusNode.requestFocus(),
-            ),
-            const SizedBox(height: 12),
-            SelectableTextField(
-              controller: descriptionController,
-              focusNode: _descriptionFocusNode,
-              labelText: 'بيان المصروف',
-              textInputAction: TextInputAction.next,
-              onSubmitted: (_) => FocusScope.of(context).nextFocus(),
+              labelText: 'المبلغ المدفوع',
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _saveSettlement(),
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
@@ -133,20 +118,16 @@ class _ExpensesScreenState
                         child: Text(wallet),
                       ))
                   .toList(),
-              onChanged: (value) {
-                setState(() => selectedWallet = value);
-                _saveButtonFocusNode.requestFocus();
-              },
+              onChanged: (value) => setState(() => selectedWallet = value),
             ),
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
               height: 50,
               child: ElevatedButton(
-                focusNode: _saveButtonFocusNode,
-                onPressed: _saveExpense,
+                onPressed: _saveSettlement,
                 child:
-                const Text('حفظ المصروف'),
+                const Text('حفظ السداد'),
               ),
             ),
           ],

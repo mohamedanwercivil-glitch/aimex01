@@ -19,6 +19,28 @@ class _TransferScreenState
   String? toBox;
   final amountController =
   TextEditingController();
+  final _fromBoxFocusNode = FocusNode();
+  final _toBoxFocusNode = FocusNode();
+  final _amountFocusNode = FocusNode();
+  final _transferButtonFocusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fromBoxFocusNode.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    amountController.dispose();
+    _fromBoxFocusNode.dispose();
+    _toBoxFocusNode.dispose();
+    _amountFocusNode.dispose();
+    _transferButtonFocusNode.dispose();
+    super.dispose();
+  }
 
   void _transfer() {
     final amount =
@@ -28,6 +50,11 @@ class _TransferScreenState
         toBox == null ||
         amount <= 0) {
       ToastService.show('اكمل البيانات');
+      return;
+    }
+
+    if (fromBox == toBox) {
+      ToastService.show('لا يمكن التحويل إلى نفس الخزنة');
       return;
     }
 
@@ -68,6 +95,7 @@ class _TransferScreenState
         child: Column(
           children: [
             DropdownButtonFormField<String>(
+              focusNode: _fromBoxFocusNode,
               value: fromBox,
               decoration:
               const InputDecoration(
@@ -82,12 +110,15 @@ class _TransferScreenState
                     child: Text(e),
                   ))
                   .toList(),
-              onChanged: (value) =>
-                  setState(() =>
-                  fromBox = value),
+              onChanged: (value) {
+                setState(() =>
+                fromBox = value);
+                _toBoxFocusNode.requestFocus();
+              },
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
+              focusNode: _toBoxFocusNode,
               value: toBox,
               decoration:
               const InputDecoration(
@@ -102,22 +133,28 @@ class _TransferScreenState
                     child: Text(e),
                   ))
                   .toList(),
-              onChanged: (value) =>
-                  setState(() =>
-                  toBox = value),
+              onChanged: (value) {
+                setState(() =>
+                toBox = value);
+                _amountFocusNode.requestFocus();
+              },
             ),
             const SizedBox(height: 12),
             SelectableTextField(
+              focusNode: _amountFocusNode,
               controller: amountController,
               keyboardType:
               TextInputType.number,
               labelText: 'المبلغ',
+              textInputAction: TextInputAction.next,
+              onSubmitted: (_) => _transferButtonFocusNode.requestFocus(),
             ),
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
               height: 50,
               child: ElevatedButton(
+                focusNode: _transferButtonFocusNode,
                 onPressed: _transfer,
                 child:
                 const Text('تنفيذ التحويل'),

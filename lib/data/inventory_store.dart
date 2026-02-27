@@ -7,7 +7,7 @@ class InventoryStore {
   static final Box box = Hive.box('inventoryBox');
 
   // =========================
-  // Import from Excel
+  // استيراد الأصناف من إكسيل (التنسيق: A:الاسم، B:الكمية، C:السعر)
   // =========================
   static Future<void> importFromExcel() async {
     final result = await FilePicker.platform.pickFiles(
@@ -20,30 +20,28 @@ class InventoryStore {
       final bytes = await file.readAsBytes();
       final excel = Excel.decodeBytes(bytes);
 
-      // Clear existing inventory
       await box.clear();
 
       final sheet = excel.tables[excel.tables.keys.first];
 
       if (sheet != null) {
-        for (var i = 1; i < sheet.rows.length; i++) { // Start from 1 to skip header
+        // نبدأ من 1 لتخطي العنوان (اسم الصنف، الكمية، سعر الشراء)
+        for (var i = 1; i < sheet.rows.length; i++) {
           final row = sheet.rows[i];
-          // Corrected column order based on the screenshot
-          final buyPrice = double.tryParse(row[0]?.value.toString() ?? ''); // Column A
-          final qty = double.tryParse(row[1]?.value.toString() ?? '');      // Column B
-          final name = row[2]?.value.toString();                            // Column C
+          if (row.length < 3) continue;
 
-          if (name != null && qty != null && buyPrice != null) {
-            addItem(name, qty, buyPrice);
+          final name = row[0]?.value?.toString(); // العمود A
+          final qty = double.tryParse(row[1]?.value?.toString() ?? '0'); // العمود B
+          final buyPrice = double.tryParse(row[2]?.value?.toString() ?? '0'); // العمود C
+
+          if (name != null && name.trim().isNotEmpty) {
+            addItem(name.trim(), qty ?? 0, buyPrice ?? 0);
           }
         }
       }
     }
   }
 
-  // =========================
-  // إضافة شراء
-  // =========================
   static void addItem(String name, double qty, double buyPrice) {
     final item = box.get(name);
 
@@ -57,94 +55,56 @@ class InventoryStore {
       box.put(name, {
         'quantity': newQty,
         'totalCost': newTotalCost,
+        'lastBuyPrice': buyPrice,
       });
     } else {
       box.put(name, {
         'quantity': qty,
         'totalCost': qty * buyPrice,
+        'lastBuyPrice': buyPrice,
       });
     }
   }
 
-  // =========================
-  // بيع
-  // =========================
   static bool sellItem(String name, double qty) {
     final item = box.get(name);
-
     if (item == null) return false;
     if ((item['quantity'] as num) < qty) return false;
 
     final newQty = (item['quantity'] as num) - qty;
-
     box.put(name, {
       'quantity': newQty,
       'totalCost': item['totalCost'],
+      'lastBuyPrice': item['lastBuyPrice'],
     });
-
     return true;
   }
   
-  // =========================
-  // جلب كمية صنف معين
-  // =========================
   static double getItemQty(String name) {
     final item = box.get(name);
-    if (item != null) {
-      return (item['quantity'] as num?)?.toDouble() ?? 0.0;
-    }
-    return 0.0;
+    return (item != null) ? (item['quantity'] as num?)?.toDouble() ?? 0.0 : 0.0;
   }
 
-
-  // =========================
-  // البحث في الأصناف المتاحة للبيع
-  // =========================
   static List<Map<String, dynamic>> searchAvailableItems(String query) {
     return box.keys
-        .where((key) =>
-    key
-        .toString()
-        .toLowerCase()
-        .contains(query.toLowerCase()) &&
-        (box.get(key)['quantity'] as num) > 0)
+        .where((key) => key.toString().toLowerCase().contains(query.toLowerCase()) && (box.get(key)['quantity'] as num) > 0)
         .map((key) {
       final item = box.get(key);
-      final quantity = (item['quantity'] as num).toDouble();
-      final totalCost = (item['totalCost'] as num).toDouble();
-
-      double avgPrice = 0;
-      if (quantity > 0) {
-        avgPrice = totalCost / quantity;
-      }
-
       return {
         'name': key,
-        'qty': quantity,
-        'avgPrice': avgPrice,
+        'qty': (item['quantity'] as num).toDouble(),
+        'lastBuyPrice': (item['lastBuyPrice'] as num?)?.toDouble() ?? 0.0,
       };
     }).toList();
   }
 
-  // =========================
-  // جلب كل الأصناف
-  // =========================
   static List<Map<String, dynamic>> getAllItems() {
     return box.keys.map((key) {
       final item = box.get(key);
-      final quantity = (item['quantity'] as num).toDouble();
-      final totalCost = (item['totalCost'] as num).toDouble();
-
-
-      double avgPrice = 0;
-      if (quantity > 0) {
-        avgPrice = totalCost / quantity;
-      }
-
       return {
         'name': key,
-        'quantity': quantity,
-        'avgPrice': avgPrice,
+        'quantity': (item['quantity'] as num).toDouble(),
+        'lastBuyPrice': (item['lastBuyPrice'] as num?)?.toDouble() ?? 0.0,
       };
     }).toList();
   }

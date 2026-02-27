@@ -1,3 +1,4 @@
+import 'package:aimex/widgets/selectable_text_field.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/finance_service.dart';
@@ -20,6 +21,17 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
   String? selectedSource;
 
   final List<String> _people = ['محمد', 'عمر', 'امي'];
+  final _amountFocusNode = FocusNode();
+  final _descriptionFocusNode = FocusNode();
+
+  @override
+  void dispose() {
+    amountController.dispose();
+    descriptionController.dispose();
+    _amountFocusNode.dispose();
+    _descriptionFocusNode.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -81,6 +93,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
     setState(() {
       selectedPerson = null;
     });
+    _amountFocusNode.requestFocus();
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('تم تسجيل المسحوب')),
@@ -94,7 +107,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
     final sources = cashState.allBoxes;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('المسحوبات')),
+      appBar: AppBar(title: const Text('مسحوبات شخصية')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -109,18 +122,23 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
                 return DropdownMenuItem(value: source, child: Text(source));
               }).toList(),
               onChanged: dayStarted
-                  ? (value) => setState(() => selectedSource = value)
+                  ? (value) => setState(() {
+                        selectedSource = value;
+                        _amountFocusNode.requestFocus();
+                      })
                   : null,
             ),
             const SizedBox(height: 12),
-            TextField(
+            SelectableTextField(
               enabled: dayStarted,
               controller: amountController,
+              focusNode: _amountFocusNode,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'المبلغ',
-                border: OutlineInputBorder(),
-              ),
+              labelText: 'المبلغ',
+              textInputAction: TextInputAction.next,
+              onSubmitted: (_) {
+                // You might want to open the person dropdown here
+              },
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
@@ -133,17 +151,20 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
                 return DropdownMenuItem(value: person, child: Text(person));
               }).toList(),
               onChanged: dayStarted
-                  ? (value) => setState(() => selectedPerson = value)
+                  ? (value) => setState(() {
+                        selectedPerson = value;
+                        _descriptionFocusNode.requestFocus();
+                      })
                   : null,
             ),
             const SizedBox(height: 12),
-            TextField(
+            SelectableTextField(
               enabled: dayStarted,
               controller: descriptionController,
-              decoration: const InputDecoration(
-                labelText: 'البيان (اختياري)',
-                border: OutlineInputBorder(),
-              ),
+              focusNode: _descriptionFocusNode,
+              labelText: 'البيان (اختياري)',
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _saveWithdraw(),
             ),
             const SizedBox(height: 20),
             SizedBox(

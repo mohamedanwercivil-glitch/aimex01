@@ -7,6 +7,9 @@ class SelectableTextField extends StatefulWidget {
   final bool enabled;
   final ValueChanged<String>? onChanged;
   final FocusNode? focusNode;
+  final TextInputAction? textInputAction;
+  final ValueChanged<String>? onSubmitted;
+  final bool autofocus;
 
   const SelectableTextField({
     super.key,
@@ -16,6 +19,9 @@ class SelectableTextField extends StatefulWidget {
     this.enabled = true,
     this.onChanged,
     this.focusNode,
+    this.textInputAction,
+    this.onSubmitted,
+    this.autofocus = false,
   });
 
   @override
@@ -59,11 +65,14 @@ class _SelectableTextFieldState extends State<SelectableTextField> {
   @override
   Widget build(BuildContext context) {
     return TextField(
+      autofocus: widget.autofocus,
       focusNode: _focusNode,
       enabled: widget.enabled,
       controller: widget.controller,
       keyboardType: widget.keyboardType,
       onChanged: widget.onChanged,
+      textInputAction: widget.textInputAction,
+      onSubmitted: widget.onSubmitted,
       decoration: InputDecoration(
         labelText: widget.labelText,
         border: const OutlineInputBorder(),

@@ -6,6 +6,9 @@ class SearchableDropdownField extends StatefulWidget {
   final List<String> Function(String) onSearch;
   final bool enabled;
   final FocusNode? focusNode;
+  final ValueChanged<String>? onSelected;
+  final TextInputAction? textInputAction;
+  final ValueChanged<String>? onSubmitted;
 
   const SearchableDropdownField({
     super.key,
@@ -14,6 +17,9 @@ class SearchableDropdownField extends StatefulWidget {
     required this.onSearch,
     this.enabled = true,
     this.focusNode,
+    this.onSelected,
+    this.textInputAction,
+    this.onSubmitted,
   });
 
   @override
@@ -30,6 +36,13 @@ class _SearchableDropdownFieldState
   void initState() {
     super.initState();
     _focusNode = widget.focusNode ?? FocusNode();
+    _focusNode.addListener(() {
+      if (!_focusNode.hasFocus) {
+        setState(() {
+          suggestions = [];
+        });
+      }
+    });
   }
 
   void _updateSuggestions(String value) {
@@ -52,26 +65,76 @@ class _SearchableDropdownFieldState
             border: const OutlineInputBorder(),
           ),
           onChanged: _updateSuggestions,
+          textInputAction: widget.textInputAction,
+          onSubmitted: widget.onSubmitted,
         ),
         if (_focusNode.hasFocus && suggestions.isNotEmpty)
           Container(
-            constraints: const BoxConstraints(maxHeight: 200),
+            constraints: const BoxConstraints(maxHeight: 300),
             decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey),
+              border: Border.all(color: Colors.grey.shade300),
               color: Colors.white,
+              borderRadius: BorderRadius.circular(4),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
-            child: ListView.builder(
+            child: ListView.separated(
+              padding: EdgeInsets.zero,
               shrinkWrap: true,
               itemCount: suggestions.length,
+              separatorBuilder: (context, index) => const Divider(height: 1),
               itemBuilder: (context, index) {
+                final suggestion = suggestions[index];
+                
+                // البحث عن معلومات إضافية بين قوسين (مثال: "اسم الصنف (متاح: 10)")
+                final hasExtraInfo = suggestion.contains('(');
+                String mainText = suggestion;
+                String extraInfo = '';
+                
+                if (hasExtraInfo) {
+                  final parts = suggestion.split('(');
+                  mainText = parts[0].trim();
+                  extraInfo = '(' + parts.sublist(1).join('(');
+                }
+
                 return ListTile(
-                  title: Text(suggestions[index]),
+                  dense: true,
+                  title: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          mainText,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      if (hasExtraInfo)
+                        Text(
+                          extraInfo,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                    ],
+                  ),
                   onTap: () {
-                    widget.controller.text = suggestions[index];
+                    // نضع النص الأساسي فقط في الـ Controller
+                    widget.controller.text = mainText;
                     setState(() {
                       suggestions.clear();
                     });
                     _focusNode.unfocus();
+                    if (widget.onSelected != null) {
+                      widget.onSelected!(mainText);
+                    }
                   },
                 );
               },

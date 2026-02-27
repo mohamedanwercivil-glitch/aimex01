@@ -1,3 +1,4 @@
+import 'package:aimex/widgets/selectable_text_field.dart';
 import 'package:flutter/material.dart';
 import '../state/day_state.dart';
 import '../state/cash_state.dart';
@@ -21,6 +22,17 @@ class _SettlementScreenState
 
   String paymentType = 'كاش';
   String? selectedWallet;
+  final _customerFocusNode = FocusNode();
+  final _amountFocusNode = FocusNode();
+
+  @override
+  void dispose() {
+    customerController.dispose();
+    amountController.dispose();
+    _customerFocusNode.dispose();
+    _amountFocusNode.dispose();
+    super.dispose();
+  }
 
   void _saveSettlement() {
     if (!DayState.instance.dayStarted) return;
@@ -70,6 +82,7 @@ class _SettlementScreenState
     amountController.clear();
     customerController.clear();
     selectedWallet = null;
+    _customerFocusNode.requestFocus();
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -84,7 +97,7 @@ class _SettlementScreenState
 
     return Scaffold(
       appBar:
-      AppBar(title: const Text('سداد')),
+      AppBar(title: const Text('سداد العملاء')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -94,23 +107,21 @@ class _SettlementScreenState
               optionsBuilder: (text) =>
                   CustomerStore.searchCustomers(
                       text.text),
-              onSelected: (value) =>
-              customerController.text =
-                  value,
+              onSelected: (value) {
+                customerController.text = value;
+                _amountFocusNode.requestFocus();
+              },
               fieldViewBuilder:
                   (context, controller,
                   focusNode, _) {
                 controller.text =
                     customerController.text;
-                return TextField(
+                return SelectableTextField(
                   controller: controller,
-                  focusNode: focusNode,
-                  decoration:
-                  const InputDecoration(
-                    labelText: 'اسم العميل',
-                    border:
-                    OutlineInputBorder(),
-                  ),
+                  focusNode: _customerFocusNode,
+                  labelText: 'اسم العميل',
+                  textInputAction: TextInputAction.next,
+                  onSubmitted: (_) => _amountFocusNode.requestFocus(),
                   onChanged: (value) =>
                   customerController.text =
                       value,
@@ -120,16 +131,14 @@ class _SettlementScreenState
 
             const SizedBox(height: 12),
 
-            TextField(
+            SelectableTextField(
               controller: amountController,
+              focusNode: _amountFocusNode,
               keyboardType:
               TextInputType.number,
-              decoration:
-              const InputDecoration(
-                labelText: 'المبلغ',
-                border:
-                OutlineInputBorder(),
-              ),
+              labelText: 'المبلغ',
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _saveSettlement(),
             ),
 
             const SizedBox(height: 12),
@@ -189,7 +198,7 @@ class _SettlementScreenState
               child: ElevatedButton(
                 onPressed: _saveSettlement,
                 child:
-                const Text('تسجيل السداد'),
+                const Text('تسجيل سداد العميل'),
               ),
             ),
           ],

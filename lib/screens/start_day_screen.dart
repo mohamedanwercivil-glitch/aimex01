@@ -16,18 +16,30 @@ class _StartDayScreenState
     extends State<StartDayScreen> {
 
   final cashController = TextEditingController();
-
-  final Map<String, TextEditingController>
-  walletControllers = {};
+  final Map<String, TextEditingController> walletControllers = {};
+  
+  // إضافة FocusNodes للتنقل بين الحقول
+  final FocusNode _cashFocusNode = FocusNode();
+  final Map<String, FocusNode> _walletFocusNodes = {};
 
   @override
   void initState() {
     super.initState();
 
-    for (var key in CashState.instance.wallets.keys) {
-      walletControllers[key] =
-          TextEditingController();
+    final walletKeys = CashState.instance.wallets.keys.toList();
+    for (var key in walletKeys) {
+      walletControllers[key] = TextEditingController();
+      _walletFocusNodes[key] = FocusNode();
     }
+  }
+
+  @override
+  void dispose() {
+    cashController.dispose();
+    _cashFocusNode.dispose();
+    walletControllers.forEach((_, controller) => controller.dispose());
+    _walletFocusNodes.forEach((_, node) => node.dispose());
+    super.dispose();
   }
 
   void _startDay() {
@@ -64,6 +76,8 @@ class _StartDayScreenState
   Widget build(BuildContext context) {
     final dayStarted =
         DayState.instance.dayStarted;
+    
+    final walletEntries = walletControllers.entries.toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -74,47 +88,58 @@ class _StartDayScreenState
         child: SingleChildScrollView(
           child: Column(
             children: [
-
               const SizedBox(height: 16),
 
-              // 🔹 خانة النقدي رجعت تاني
+              // 🔹 خانة النقدي
               TextField(
                 controller: cashController,
-                keyboardType:
-                TextInputType.number,
-                decoration:
-                const InputDecoration(
+                focusNode: _cashFocusNode,
+                autofocus: true,
+                keyboardType: TextInputType.number,
+                textInputAction: walletEntries.isNotEmpty ? TextInputAction.next : TextInputAction.done,
+                decoration: const InputDecoration(
                   labelText: 'نقدي',
-                  border:
-                  OutlineInputBorder(),
+                  border: OutlineInputBorder(),
                 ),
+                onSubmitted: (_) {
+                  if (walletEntries.isNotEmpty) {
+                    FocusScope.of(context).requestFocus(_walletFocusNodes[walletEntries[0].key]);
+                  } else {
+                    _startDay();
+                  }
+                },
               ),
 
               const SizedBox(height: 12),
 
               // 🔹 المحافظ
-              ...walletControllers.entries
-                  .map(
-                    (entry) => Padding(
-                  padding:
-                  const EdgeInsets.only(
-                      bottom: 12),
+              ...walletEntries.asMap().entries.map((mapEntry) {
+                final index = mapEntry.key;
+                final walletKey = mapEntry.value.key;
+                final controller = mapEntry.value.value;
+                final isLast = index == walletEntries.length - 1;
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
                   child: TextField(
-                    controller:
-                    entry.value,
-                    keyboardType:
-                    TextInputType
-                        .number,
-                    decoration:
-                    InputDecoration(
-                      labelText:
-                      entry.key,
-                      border:
-                      const OutlineInputBorder(),
+                    controller: controller,
+                    focusNode: _walletFocusNodes[walletKey],
+                    keyboardType: TextInputType.number,
+                    textInputAction: isLast ? TextInputAction.done : TextInputAction.next,
+                    decoration: InputDecoration(
+                      labelText: walletKey,
+                      border: const OutlineInputBorder(),
                     ),
+                    onSubmitted: (_) {
+                      if (!isLast) {
+                        FocusScope.of(context).requestFocus(_walletFocusNodes[walletEntries[index + 1].key]);
+                      } else {
+                        _startDay();
+                      }
+                    },
                   ),
-                ),
-              ),
+                );
+              }),
 
               const SizedBox(height: 20),
 
@@ -122,12 +147,8 @@ class _StartDayScreenState
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton(
-                  onPressed:
-                  dayStarted
-                      ? null
-                      : _startDay,
-                  child:
-                  const Text('بدء اليوم'),
+                  onPressed: dayStarted ? null : _startDay,
+                  child: const Text('بدء اليوم'),
                 ),
               ),
             ],

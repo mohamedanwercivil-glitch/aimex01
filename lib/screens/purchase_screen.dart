@@ -15,13 +15,11 @@ import '../widgets/searchable_dropdown_field.dart';
 
 class PurchaseItem {
   final String name;
-  final String unit;
   final double qty;
   final double price;
 
   PurchaseItem({
     required this.name,
-    required this.unit,
     required this.qty,
     required this.price,
   });
@@ -44,8 +42,12 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   final paidAmountController = TextEditingController();
   final discountController = TextEditingController(); // Added discount controller
   final _supplierFocusNode = FocusNode();
+  final _itemFocusNode = FocusNode();
+  final _qtyFocusNode = FocusNode();
+  final _priceFocusNode = FocusNode();
+  final _discountFocusNode = FocusNode();
+  final _paidAmountFocusNode = FocusNode();
 
-  String selectedUnit = 'صغرى';
   String paymentType = 'كاش';
   String? selectedWallet;
 
@@ -72,6 +74,11 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     paidAmountController.dispose();
     discountController.dispose(); // Dispose discount controller
     _supplierFocusNode.dispose();
+    _itemFocusNode.dispose();
+    _qtyFocusNode.dispose();
+    _priceFocusNode.dispose();
+    _discountFocusNode.dispose();
+    _paidAmountFocusNode.dispose();
     super.dispose();
   }
 
@@ -89,7 +96,6 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       if (editingIndex != null) {
         items[editingIndex!] = PurchaseItem(
           name: name,
-          unit: selectedUnit,
           qty: qty,
           price: price,
         );
@@ -98,7 +104,6 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
         items.add(
           PurchaseItem(
             name: name,
-            unit: selectedUnit,
             qty: qty,
             price: price,
           ),
@@ -107,7 +112,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       itemController.clear();
       qtyController.clear();
       priceController.clear();
-      selectedUnit = 'صغرى';
+      _itemFocusNode.requestFocus();
     });
   }
 
@@ -238,7 +243,6 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       editingIndex = null;
       selectedWallet = null;
       paymentType = 'كاش';
-      selectedUnit = 'صغرى';
     });
     _supplierFocusNode.requestFocus();
 
@@ -263,46 +267,49 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                 controller: supplierController,
                 label: 'اسم المورد',
                 onSearch: (value) => SupplierStore.searchSuppliers(value),
+                onSelected: (_) => _itemFocusNode.requestFocus(),
+                textInputAction: TextInputAction.next,
               ),
               const SizedBox(height: 12),
               SearchableDropdownField(
                 enabled: dayStarted,
                 controller: itemController,
+                focusNode: _itemFocusNode,
                 label: 'اسم الصنف',
                 onSearch: (value) => InventoryStore.getAllItems()
-                    .map((e) => e['name'] as String)
-                    .where((name) =>
-                        name.toLowerCase().contains(value.toLowerCase()))
+                    .where((e) => (e['name'] as String)
+                        .toLowerCase()
+                        .contains(value.toLowerCase()))
+                    .map((e) =>
+                        "${e['name']} (المتاح: ${e['quantity']}, آخر شراء: ${e['lastBuyPrice']})")
                     .toList(),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                value: selectedUnit,
-                decoration: const InputDecoration(
-                  labelText: 'الوحدة',
-                  border: OutlineInputBorder(),
-                ),
-                items: const [
-                  DropdownMenuItem(value: 'صغرى', child: Text('صغرى')),
-                  DropdownMenuItem(value: 'كبرى', child: Text('كبرى')),
-                ],
-                onChanged: dayStarted
-                    ? (value) => setState(() => selectedUnit = value!)
-                    : null,
+                onSelected: (value) {
+                  // Extract only the item name from the selected string
+                  final name = value.split(' (المتاح:')[0];
+                  itemController.text = name;
+                  _qtyFocusNode.requestFocus();
+                },
+                textInputAction: TextInputAction.next,
               ),
               const SizedBox(height: 12),
               SelectableTextField(
                 enabled: dayStarted,
                 controller: qtyController,
+                focusNode: _qtyFocusNode,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 labelText: 'الكمية',
+                textInputAction: TextInputAction.next,
+                onSubmitted: (_) => _priceFocusNode.requestFocus(),
               ),
               const SizedBox(height: 12),
               SelectableTextField(
                 enabled: dayStarted,
                 controller: priceController,
+                focusNode: _priceFocusNode,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                labelText: 'سعر الوحدة',
+                labelText: 'سعر الشراء',
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _addItem(),
               ),
               const SizedBox(height: 16),
               ElevatedButton(
@@ -322,11 +329,11 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                               itemController.text = item.name;
                               qtyController.text = item.qty.toString();
                               priceController.text = item.price.toString();
-                              selectedUnit = item.unit;
+                              _itemFocusNode.requestFocus();
                             });
                           }
                         : null,
-                    title: Text('${item.name} (${item.unit})'),
+                    title: Text(item.name),
                     subtitle: Text(
                         'كمية: ${item.qty}  سعر: ${item.price}  إجمالي: ${item.total}'),
                   ),
@@ -342,10 +349,17 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
               SelectableTextField(
                 enabled: dayStarted,
                 controller: discountController,
+                focusNode: _discountFocusNode,
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
                 labelText: 'الخصم',
                 onChanged: (_) => setState(() {}),
+                textInputAction: TextInputAction.next,
+                onSubmitted: (_) {
+                  if (paymentType != 'آجل') {
+                    _paidAmountFocusNode.requestFocus();
+                  }
+                },
               ),
               const SizedBox(height: 12),
               Text(
@@ -369,6 +383,9 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                     ? (value) {
                         setState(() {
                           paymentType = value!;
+                          if (paymentType != 'آجل') {
+                            _paidAmountFocusNode.requestFocus();
+                          }
                         });
                       }
                     : null,
@@ -397,8 +414,11 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                 SelectableTextField(
                   enabled: dayStarted,
                   controller: paidAmountController,
+                  focusNode: _paidAmountFocusNode,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   labelText: 'المبلغ المدفوع',
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => _saveInvoice(),
                 ),
               ],
               const SizedBox(height: 20),

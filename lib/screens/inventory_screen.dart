@@ -80,7 +80,8 @@ class _InventoryScreenState
                       Text(item['name']),
                       subtitle: Text(
                         'الكمية: ${item['quantity']}\n'
-                            'متوسط سعر الشراء: ${item['avgPrice'].toStringAsFixed(2)}',
+                            'متوسط سعر الشراء: ${item['avgPrice'].toStringAsFixed(2)}\n'
+                            'آخر سعر شراء: ${item['lastBuyPrice'].toStringAsFixed(2)}',
                       ),
                     ),
                   );

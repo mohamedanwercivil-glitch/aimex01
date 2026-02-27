@@ -1,4 +1,3 @@
-import 'package:aimex/data/inventory_store.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../state/day_state.dart';
@@ -11,6 +10,8 @@ import 'withdraw_screen.dart';
 import 'inventory_screen.dart';
 import 'end_day_screen.dart';
 import 'settlement_screen.dart';
+import 'supplier_settlement_screen.dart';
+import 'settings/import_screen.dart'; // Import the new screen
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -60,7 +61,7 @@ class HomeScreen extends StatelessWidget {
                       ),
                       _buildCard(
                         context,
-                        'سداد',
+                        'سداد العملاء',
                         Icons.payments,
                         Colors.indigo,
                         const SettlementScreen(),
@@ -68,7 +69,7 @@ class HomeScreen extends StatelessWidget {
                       ),
                       _buildCard(
                         context,
-                        'مصروفات',
+                        'مصروفات الشغل',
                         Icons.receipt,
                         Colors.purple,
                         const ExpensesScreen(),
@@ -76,10 +77,18 @@ class HomeScreen extends StatelessWidget {
                       ),
                       _buildCard(
                         context,
-                        'مسحوبات',
+                        'مسحوبات شخصية',
                         Icons.account_balance_wallet,
                         Colors.orange,
                         const WithdrawScreen(),
+                        enabled: dayStarted,
+                      ),
+                      _buildCard(
+                        context,
+                        'سداد الموردين',
+                        Icons.assignment_return,
+                        Colors.brown,
+                        const SupplierSettlementScreen(),
                         enabled: dayStarted,
                       ),
                       _buildCard(
@@ -120,8 +129,13 @@ class HomeScreen extends StatelessWidget {
                   width: double.infinity,
                   height: 50,
                   child: ElevatedButton(
-                    onPressed: () async {
-                      await InventoryStore.importFromExcel();
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ImportScreen(),
+                        ),
+                      );
                     },
                     child: const Text('استيراد من اكسل'),
                   ),

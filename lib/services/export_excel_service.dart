@@ -241,9 +241,9 @@ class ExportExcelService {
     }
 
     // =========================
-    // المصروفات
+    // مصروفات الشغل
     // =========================
-    var expenses = excel['المصروفات'];
+    var expenses = excel['مصروفات الشغل'];
     expenses.appendRow(['المبلغ', 'البيان', 'الخزنة']);
 
     for (var r in records.where((e) => e['type'] == 'expense')) {
@@ -251,9 +251,9 @@ class ExportExcelService {
     }
 
     // =========================
-    // المسحوبات
+    // مسحوبات شخصية
     // =========================
-    var withdraws = excel['المسحوبات'];
+    var withdraws = excel['مسحوبات شخصية'];
     withdraws.appendRow(['المبلغ', 'اسم الشخص', 'البيان']);
 
     for (var r in records.where((e) => e['type'] == 'withdraw')) {
@@ -271,14 +271,24 @@ class ExportExcelService {
     }
 
     // =========================
-    // السداد
+    // سداد العملاء
     // =========================
-    var settlement = excel['السداد'];
+    var settlement = excel['سداد العملاء'];
     settlement.appendRow(['العميل', 'المبلغ', 'طريقة الدفع', 'المحفظة']);
 
     for (var r in records.where((e) => e['type'] == 'settlement')) {
       settlement.appendRow(
           [r['customer'], r['amount'], r['paymentType'], r['wallet']]);
+    }
+
+    // =========================
+    // سداد الموردين
+    // =========================
+    var supplierSettlement = excel['سداد الموردين'];
+    supplierSettlement.appendRow(['المورد', 'المبلغ', 'الخزنة']);
+
+    for (var r in records.where((e) => e['type'] == 'supplier_settlement')) {
+      supplierSettlement.appendRow([r['supplier'], r['amount'], r['wallet']]);
     }
 
     // =========================
