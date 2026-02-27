@@ -12,7 +12,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Initialize services
-  await NotificationService.initialize(); // Added await
+  await NotificationService.initialize(); 
   BackgroundService.initialize();
 
   await Hive.initFlutter();
@@ -30,6 +30,12 @@ void main() async {
   // Box خاص بتسجيل كل عمليات اليوم
   // =========================
   await Hive.openBox('dayRecordsBox');
+
+  // =========================
+  // صناديق المسودات (Drafts)
+  // =========================
+  await Hive.openBox('salesDraftBox');
+  await Hive.openBox('purchasesDraftBox');
 
   // Initialize states AFTER opening boxes
   DayState.instance;

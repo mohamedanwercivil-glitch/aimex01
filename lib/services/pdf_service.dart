@@ -13,11 +13,12 @@ class PdfService {
     required double total,
     required double paidAmount,
     required double dueAmount,
-    required String invoiceId, // يمثل الآن الرقم المتسلسل (مثلاً "1")
+    required String invoiceId,
+    required double previousBalance,
+    required double newBalance,
   }) async {
     final pdf = pw.Document();
 
-    // تحميل الخط العربي
     final fontData = await rootBundle.load("assets/fonts/Tajawal-Regular.ttf");
     final ttf = pw.Font.ttf(fontData);
 
@@ -47,15 +48,52 @@ class PdfService {
                 ),
                 pw.SizedBox(height: 10),
                 pw.Text('التاريخ: ${DateTime.now().toLocal().toString().split(' ')[0]}', style: pw.TextStyle(font: ttf)),
-                pw.Divider(height: 30),
+                pw.Divider(height: 20),
+                
                 _buildItemsTable(items, ttf),
-                pw.Divider(),
-                _buildTotals(subtotal, discount, total, paidAmount, dueAmount, ttf),
+                
+                pw.SizedBox(height: 20),
+                
+                pw.Row(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    // كشف الحساب المصغر
+                    pw.Expanded(
+                      flex: 1,
+                      child: pw.Container(
+                        padding: const pw.EdgeInsets.all(10),
+                        decoration: pw.BoxDecoration(
+                          border: pw.TableBorder.all(),
+                          color: PdfColors.grey100,
+                        ),
+                        child: pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
+                          children: [
+                            pw.Text('ملخص الحساب:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12)),
+                            pw.SizedBox(height: 5),
+                            _buildBalanceRow('الرصيد السابق:', previousBalance, ttf),
+                            _buildBalanceRow('إجمالي الفاتورة:', total, ttf),
+                            _buildBalanceRow('المبلغ المدفوع:', paidAmount, ttf),
+                            pw.Divider(),
+                            _buildBalanceRow('الرصيد الحالي:', newBalance, ttf, isTotal: true),
+                          ],
+                        ),
+                      ),
+                    ),
+                    pw.SizedBox(width: 40),
+                    // تفاصيل الفاتورة الحالية
+                    pw.Expanded(
+                      flex: 1,
+                      child: _buildTotals(subtotal, discount, total, paidAmount, dueAmount, ttf),
+                    ),
+                  ],
+                ),
+                
                 pw.SizedBox(height: 40),
                 pw.Center(
                   child: pw.Text(
-                    '*** المبلغ المتبقي خاص بهذه الفاتورة فقط وليس إجمالي الرصيد ***',
-                    style: pw.TextStyle(fontStyle: pw.FontStyle.italic, color: PdfColors.grey600, font: ttf, fontSize: 10),
+                    'شكرًا لتعاملكم معنا',
+                    style: pw.TextStyle(fontStyle: pw.FontStyle.italic, color: PdfColors.grey700, font: ttf, fontSize: 12),
                   ),
                 ),
               ],
@@ -66,6 +104,22 @@ class PdfService {
     );
 
     return pdf.save();
+  }
+
+  static pw.Widget _buildBalanceRow(String label, double amount, pw.Font font, {bool isTotal = false}) {
+    String status = amount > 0 ? '(عليه)' : (amount < 0 ? '(له)' : '');
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 2),
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text(label, style: pw.TextStyle(font: font, fontSize: isTotal ? 11 : 10, fontWeight: isTotal ? pw.FontWeight.bold : null)),
+          pw.Text('${amount.abs().toStringAsFixed(2)} $status', 
+            style: pw.TextStyle(font: font, fontSize: isTotal ? 11 : 10, fontWeight: isTotal ? pw.FontWeight.bold : null, 
+            color: amount > 0 ? PdfColors.red : PdfColors.green)),
+        ],
+      ),
+    );
   }
 
   static pw.Widget _buildItemsTable(List<SaleItem> items, pw.Font font) {
@@ -105,25 +159,19 @@ class PdfService {
     double dueAmount,
     pw.Font font,
   ) {
-    return pw.Container(
-      alignment: pw.Alignment.centerRight,
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.end,
-        children: [
-          pw.SizedBox(height: 10),
-          pw.Text('الإجمالي: ${subtotal.toStringAsFixed(2)}', style: pw.TextStyle(font: font)),
-          pw.SizedBox(height: 5),
-          pw.Text('الخصم: ${discount.toStringAsFixed(2)}', style: pw.TextStyle(font: font)),
-          pw.SizedBox(height: 5),
-          pw.Text('صافي الفاتورة: ${total.toStringAsFixed(2)}',
-              style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14, font: font)),
-          pw.SizedBox(height: 10),
-          pw.Text('المبلغ المدفوع: ${paidAmount.toStringAsFixed(2)}', style: pw.TextStyle(font: font)),
-          pw.SizedBox(height: 5),
-          pw.Text('المتبقي من الفاتورة: ${dueAmount.toStringAsFixed(2)}',
-            style: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.red, font: font)),
-        ],
-      ),
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.end,
+      children: [
+        pw.Text('الإجمالي: ${subtotal.toStringAsFixed(2)}', style: pw.TextStyle(font: font)),
+        pw.Text('الخصم: ${discount.toStringAsFixed(2)}', style: pw.TextStyle(font: font)),
+        pw.Divider(),
+        pw.Text('صافي الفاتورة: ${total.toStringAsFixed(2)}',
+            style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14, font: font)),
+        pw.Text('المبلغ المدفوع: ${paidAmount.toStringAsFixed(2)}', style: pw.TextStyle(font: font)),
+        pw.SizedBox(height: 5),
+        pw.Text('المتبقي من الفاتورة: ${dueAmount.toStringAsFixed(2)}',
+          style: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.red, font: font)),
+      ],
     );
   }
 }

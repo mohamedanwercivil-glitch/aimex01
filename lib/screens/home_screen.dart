@@ -11,14 +11,14 @@ import 'inventory_screen.dart';
 import 'end_day_screen.dart';
 import 'settlement_screen.dart';
 import 'supplier_settlement_screen.dart';
-import 'settings/import_screen.dart'; // Import the new screen
+import 'settings/import_screen.dart';
+import 'account_statement_screen.dart'; // إضافة الشاشة الجديدة
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // Use Consumer to listen to DayState changes
     return Consumer<DayState>(
       builder: (context, dayState, child) {
         final dayStarted = dayState.dayStarted;
@@ -69,6 +69,14 @@ class HomeScreen extends StatelessWidget {
                       ),
                       _buildCard(
                         context,
+                        'كشف حساب', // الزر الجديد
+                        Icons.account_balance,
+                        Colors.cyan.shade700,
+                        const AccountStatementScreen(),
+                        enabled: true,
+                      ),
+                      _buildCard(
+                        context,
                         'مصروفات الشغل',
                         Icons.receipt,
                         Colors.purple,
@@ -97,12 +105,12 @@ class HomeScreen extends StatelessWidget {
                         Icons.search,
                         Colors.red,
                         const InventoryScreen(),
-                        enabled: true, // Always enabled
+                        enabled: true,
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 10),
                 SizedBox(
                   width: double.infinity,
                   height: 50,
@@ -124,7 +132,7 @@ class HomeScreen extends StatelessWidget {
                     child: const Text('إنهاء اليوم'),
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 10),
                 SizedBox(
                   width: double.infinity,
                   height: 50,

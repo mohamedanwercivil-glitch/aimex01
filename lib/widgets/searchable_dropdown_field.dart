@@ -91,16 +91,10 @@ class _SearchableDropdownFieldState
               itemBuilder: (context, index) {
                 final suggestion = suggestions[index];
                 
-                // البحث عن معلومات إضافية بين قوسين (مثال: "اسم الصنف (متاح: 10)")
-                final hasExtraInfo = suggestion.contains('(');
-                String mainText = suggestion;
-                String extraInfo = '';
-                
-                if (hasExtraInfo) {
-                  final parts = suggestion.split('(');
-                  mainText = parts[0].trim();
-                  extraInfo = '(' + parts.sublist(1).join('(');
-                }
+                // نستخدم الفاصل | لفصل الاسم عن المعلومات الإضافية بأمان
+                final parts = suggestion.split('|');
+                final mainText = parts[0].trim();
+                final extraInfo = parts.length > 1 ? parts[1].trim() : '';
 
                 return ListTile(
                   dense: true,
@@ -115,7 +109,7 @@ class _SearchableDropdownFieldState
                           ),
                         ),
                       ),
-                      if (hasExtraInfo)
+                      if (extraInfo.isNotEmpty)
                         Text(
                           extraInfo,
                           style: TextStyle(
@@ -126,7 +120,6 @@ class _SearchableDropdownFieldState
                     ],
                   ),
                   onTap: () {
-                    // نضع النص الأساسي فقط في الـ Controller
                     widget.controller.text = mainText;
                     setState(() {
                       suggestions.clear();

@@ -4,10 +4,55 @@ import 'package:path_provider/path_provider.dart';
 import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:archive/archive_io.dart';
 import '../data/day_records_store.dart';
 import '../state/cash_state.dart';
 
 class ExportExcelService {
+  static Future<Map<String, String>> exportDayWithInvoices() async {
+    final excelPath = await exportDay();
+    final zipPath = await zipDailyInvoices();
+    
+    return {
+      'excel': excelPath,
+      'zip': zipPath,
+    };
+  }
+
+  static Future<String> zipDailyInvoices() async {
+    var now = DateTime.now();
+    String reportDate = DateFormat('dd-MM-yyyy').format(now);
+    
+    final appDir = await getApplicationDocumentsDirectory();
+    final invoicesDir = Directory('${appDir.path}/daily_invoices');
+    
+    if (!await invoicesDir.exists() || (await invoicesDir.list().isEmpty)) {
+      return "";
+    }
+
+    final encoder = ZipFileEncoder();
+    final zipPath = '${appDir.path}/فواتير_مبيعات_$reportDate.zip';
+    encoder.create(zipPath);
+    
+    await for (final file in invoicesDir.list()) {
+      if (file is File && file.path.endsWith('.pdf')) {
+        encoder.addFile(file);
+      }
+    }
+    encoder.close();
+    
+    return zipPath;
+  }
+
+  // دالة لمسح الفواتير بعد الانتهاء من إرسالها لليوم الجديد
+  static Future<void> clearDailyInvoices() async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final invoicesDir = Directory('${appDir.path}/daily_invoices');
+    if (await invoicesDir.exists()) {
+      await invoicesDir.delete(recursive: true);
+    }
+  }
+
   static Future<String> exportDay() async {
     var now = DateTime.now();
     String reportDate = DateFormat('dd-MM-yyyy hh_mm_a').format(now);
@@ -43,7 +88,6 @@ class ExportExcelService {
 
       final invoiceId = invoiceNum.toString();
 
-      // Invoice Header
       salesSheet.appendRow(['Invoice ID', invoiceId]);
       salesSheet.appendRow([
         'Date',
@@ -60,13 +104,9 @@ class ExportExcelService {
       salesSheet.appendRow(['Remaining', first['dueAmount']]);
       salesSheet.appendRow(['Invoice Total', first['invoiceTotal']]);
 
-      // Empty row for spacing
       salesSheet.appendRow([]);
-
-      // Items table header
       salesSheet.appendRow(['item_name', 'qty', 'unit_price', 'total']);
 
-      // Items rows
       for (var item in invoiceItems) {
         salesSheet
             .appendRow([item['item'], item['qty'], item['price'], item['total']]);
@@ -101,7 +141,6 @@ class ExportExcelService {
 
       final invoiceId = invoiceNumPurchase.toString();
 
-      // Invoice Header
       purchasesSheet.appendRow(['Invoice ID', invoiceId]);
       purchasesSheet.appendRow([
         'Date',
@@ -118,13 +157,9 @@ class ExportExcelService {
       purchasesSheet.appendRow(['Remaining', first['dueAmount']]);
       purchasesSheet.appendRow(['Invoice Total', first['invoiceTotal']]);
 
-      // Empty row for spacing
       purchasesSheet.appendRow([]);
-
-      // Items table header
       purchasesSheet.appendRow(['item_name', 'qty', 'unit_price', 'total']);
 
-      // Items rows
       for (var item in invoiceItems) {
         purchasesSheet.appendRow(
             [item['item'], item['qty'], item['price'], item['total']]);
@@ -170,7 +205,6 @@ class ExportExcelService {
           null
         ]);
       }
-      // Summary row for the invoice
       purchasesAutoSheet.appendRow([
         'فاتورة رقم: $invoiceNumPurchaseAuto',
         null,
@@ -224,7 +258,6 @@ class ExportExcelService {
           null
         ]);
       }
-      // Summary row for the invoice
       salesAutoSheet.appendRow([
         'فاتورة رقم: $invoiceNumSaleAuto',
         null,
@@ -240,80 +273,56 @@ class ExportExcelService {
       invoiceNumSaleAuto++;
     }
 
-    // =========================
     // مصروفات الشغل
-    // =========================
     var expenses = excel['مصروفات الشغل'];
     expenses.appendRow(['المبلغ', 'البيان', 'الخزنة']);
-
     for (var r in records.where((e) => e['type'] == 'expense')) {
       expenses.appendRow([r['amount'], r['description'], r['wallet']]);
     }
 
-    // =========================
     // مسحوبات شخصية
-    // =========================
     var withdraws = excel['مسحوبات شخصية'];
     withdraws.appendRow(['المبلغ', 'اسم الشخص', 'البيان']);
-
     for (var r in records.where((e) => e['type'] == 'withdraw')) {
       withdraws.appendRow([r['amount'], r['person'], r['description']]);
     }
 
-    // =========================
     // التحويلات
-    // =========================
     var transfers = excel['التحويلات'];
     transfers.appendRow(['من', 'إلى', 'المبلغ']);
-
     for (var r in records.where((e) => e['type'] == 'transfer')) {
       transfers.appendRow([r['from'], r['to'], r['amount']]);
     }
 
-    // =========================
     // سداد العملاء
-    // =========================
     var settlement = excel['سداد العملاء'];
     settlement.appendRow(['العميل', 'المبلغ', 'طريقة الدفع', 'المحفظة']);
-
     for (var r in records.where((e) => e['type'] == 'settlement')) {
-      settlement.appendRow(
-          [r['customer'], r['amount'], r['paymentType'], r['wallet']]);
+      settlement.appendRow([r['customer'], r['amount'], r['paymentType'], r['wallet']]);
     }
 
-    // =========================
     // سداد الموردين
-    // =========================
     var supplierSettlement = excel['سداد الموردين'];
     supplierSettlement.appendRow(['المورد', 'المبلغ', 'الخزنة']);
-
     for (var r in records.where((e) => e['type'] == 'supplier_settlement')) {
       supplierSettlement.appendRow([r['supplier'], r['amount'], r['wallet']]);
     }
 
-    // =========================
     // ملخص اليوم
-    // =========================
     var summarySheet = excel['ملخص اليوم'];
-
     final startOfDayCash = CashState.instance.startOfDayCash;
     final startOfDayWallets = CashState.instance.startOfDayWallets;
     final totalStartOfDayMoney = startOfDayCash +
         startOfDayWallets.values.fold(0.0, (sum, val) => sum + val);
 
-    final totalSales =
-        salesByInvoice.values.fold(0.0, (sum, items) => sum + (items.first['invoiceTotal'] as double));
-    final totalPaidSales = salesByInvoice.values
-        .fold(0.0, (sum, items) => sum + (items.first['paidAmount'] as double));
+    final totalSales = salesByInvoice.values.fold(0.0, (sum, items) => sum + (items.first['invoiceTotal'] as double));
+    final totalPaidSales = salesByInvoice.values.fold(0.0, (sum, items) => sum + (items.first['paidAmount'] as double));
     final totalSalesDiscount = salesByInvoice.values.fold(0.0, (sum, items) => sum + (items.first['discount'] as double? ?? 0.0));
     final subtotalSales = totalSales + totalSalesDiscount;
     final totalDueSales = subtotalSales - totalPaidSales - totalSalesDiscount;
 
-    final totalPurchases =
-        purchasesByInvoice.values.fold(0.0, (sum, items) => sum + (items.first['invoiceTotal'] as double));
-
-    final totalPaidPurchases = purchasesByInvoice.values
-        .fold(0.0, (sum, items) => sum + (items.first['paidAmount'] as double));
+    final totalPurchases = purchasesByInvoice.values.fold(0.0, (sum, items) => sum + (items.first['invoiceTotal'] as double));
+    final totalPaidPurchases = purchasesByInvoice.values.fold(0.0, (sum, items) => sum + (items.first['paidAmount'] as double));
     final totalPurchasesDiscount = purchasesByInvoice.values.fold(0.0, (sum, items) => sum + (items.first['discount'] as double? ?? 0.0));
     final subtotalPurchases = totalPurchases + totalPurchasesDiscount;
     final totalDuePurchases = subtotalPurchases - totalPaidPurchases - totalPurchasesDiscount;
@@ -324,27 +333,21 @@ class ExportExcelService {
     for (var entry in startOfDayWallets.entries) {
       summarySheet.appendRow([entry.key, entry.value]);
     }
-
     summarySheet.appendRow([]);
-
     summarySheet.appendRow(['المشتريات']);
     summarySheet.appendRow(['اجمالي فواتير المشتريات', subtotalPurchases]);
     summarySheet.appendRow(['اجمالي الخصومات', totalPurchasesDiscount]);
     summarySheet.appendRow(['صافي المشتريات', totalPurchases]);
     summarySheet.appendRow(['اجمالي المدفوع', totalPaidPurchases]);
     summarySheet.appendRow(['اجمالي المتبقي', totalDuePurchases]);
-
     summarySheet.appendRow([]);
-
     summarySheet.appendRow(['المبيعات']);
     summarySheet.appendRow(['اجمالي فواتير المبيعات', subtotalSales]);
     summarySheet.appendRow(['اجمالي الخصومات', totalSalesDiscount]);
     summarySheet.appendRow(['صافي المبيعات', totalSales]);
     summarySheet.appendRow(['اجمالي المستلم', totalPaidSales]);
     summarySheet.appendRow(['اجمالي المتبقي', totalDueSales]);
-
     summarySheet.appendRow([]);
-
     summarySheet.appendRow(['رصيد نهاية اليوم']);
     summarySheet.appendRow(['اجمالي', CashState.instance.totalMoney]);
     summarySheet.appendRow(['نقدي', CashState.instance.cash]);
@@ -355,11 +358,9 @@ class ExportExcelService {
     if (await Permission.manageExternalStorage.request().isGranted) {
       String downloadsPath = '/storage/emulated/0/Download';
       final reportDir = Directory(downloadsPath + "/التقرير اليومي");
-
       if (!await reportDir.exists()) {
         await reportDir.create(recursive: true);
       }
-
       final filePath = "${reportDir.path}/تقرير يوم $reportDate.xlsx";
       final file = File(filePath);
       await file.writeAsBytes(excel.encode()!, flush: true);
