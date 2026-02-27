@@ -3,6 +3,7 @@ import 'package:hive/hive.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../data/day_records_store.dart';
 import '../services/background_service.dart';
+import '../services/export_excel_service.dart';
 
 class DayState extends ChangeNotifier {
   static final DayState instance = DayState._internal();
@@ -54,6 +55,10 @@ class DayState extends ChangeNotifier {
   }
 
   void startDay(double startCash) {
+    // 🔹 مسح بيانات اليوم السابق عند بدء يوم جديد
+    DayRecordsStore.clear();
+    ExportExcelService.clearDailyInvoices();
+    
     dayStarted = true;
     cashStart = startCash;
     totalSales = 0;

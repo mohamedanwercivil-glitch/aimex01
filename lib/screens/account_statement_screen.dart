@@ -16,16 +16,16 @@ class _AccountStatementScreenState extends State<AccountStatementScreen> {
     double totalCustomerCredit = 0;
     for (var name in CustomerStore.getAllCustomers()) {
       double bal = CustomerStore.getBalance(name);
-      if (bal > 0) totalCustomerCredit += bal; 
-      else totalCustomerDebit += bal.abs();
+      if (bal > 0) totalCustomerDebit += bal; // عليه (مدين)
+      else totalCustomerCredit += bal.abs(); // له (دائن)
     }
 
     double totalSupplierCredit = 0;
     double totalSupplierDebit = 0;
     for (var supplier in SupplierStore.suppliers) {
       double bal = SupplierStore.getBalance(supplier.name);
-      if (bal > 0) totalSupplierCredit += bal;
-      else totalSupplierDebit += bal.abs();
+      if (bal > 0) totalSupplierCredit += bal; // له (دائن)
+      else totalSupplierDebit += bal.abs(); // عليه (مدين)
     }
 
     return Scaffold(
@@ -50,7 +50,7 @@ class _AccountStatementScreenState extends State<AccountStatementScreen> {
             _buildLargeAccountButton(
               context,
               title: 'العملاء',
-              subtitle: 'إجمالي دائن (عليهم): ${totalCustomerCredit.toStringAsFixed(2)} | مدين (لهم): ${totalCustomerDebit.toStringAsFixed(2)}',
+              subtitle: 'إجمالي مدين (عليهم): ${totalCustomerDebit.toStringAsFixed(2)} | دائن (لهم): ${totalCustomerCredit.toStringAsFixed(2)}',
               icon: Icons.people,
               color: Colors.green.shade800,
               onTap: () => Navigator.push(
@@ -237,8 +237,8 @@ class _CustomerBalancesListScreenState extends State<CustomerBalancesListScreen>
       customersWithBalance = customersWithBalance.where((name) => name.toLowerCase().contains(searchQuery.toLowerCase())).toList();
     }
 
-    double totalDebit = 0; // اللي عليه (أحمر)
-    double totalCredit = 0; // اللي ليه (أخضر)
+    double totalDebit = 0; // اللي عليه (مدين)
+    double totalCredit = 0; // اللي ليه (دائن)
     for (var name in customersWithBalance) {
       double bal = CustomerStore.getBalance(name);
       if (bal > 0) totalDebit += bal; 
@@ -273,8 +273,8 @@ class _CustomerBalancesListScreenState extends State<CustomerBalancesListScreen>
             child: const Row(
               children: [
                 Expanded(flex: 3, child: Text('إسم العميل', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold))),
-                Expanded(flex: 2, child: Text('دائن (عليه)', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue))),
-                Expanded(flex: 2, child: Text('مدين (له)', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue))),
+                Expanded(flex: 2, child: Text('مدين (عليه)', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue))),
+                Expanded(flex: 2, child: Text('دائن (له)', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue))),
               ],
             ),
           ),
@@ -286,16 +286,16 @@ class _CustomerBalancesListScreenState extends State<CustomerBalancesListScreen>
               itemBuilder: (context, index) {
                 final name = customersWithBalance[index];
                 final balance = CustomerStore.getBalance(name);
-                double creditCol = balance > 0 ? balance : 0; // يظهر في "دائن (عليه)"
-                double debitCol = balance < 0 ? balance.abs() : 0; // يظهر في "مدين (له)"
+                double debitCol = balance > 0 ? balance : 0; // مدين (عليه)
+                double creditCol = balance < 0 ? balance.abs() : 0; // دائن (له)
 
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   child: Row(
                     children: [
                       Expanded(flex: 3, child: Text(name, textAlign: TextAlign.center, style: const TextStyle(fontSize: 15))),
-                      Expanded(flex: 2, child: Text(creditCol > 0 ? creditCol.toStringAsFixed(2) : '0', textAlign: TextAlign.center, style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold))),
-                      Expanded(flex: 2, child: Text(debitCol > 0 ? debitCol.toStringAsFixed(2) : '0', textAlign: TextAlign.center, style: const TextStyle(color: Colors.green))),
+                      Expanded(flex: 2, child: Text(debitCol > 0 ? debitCol.toStringAsFixed(2) : '0', textAlign: TextAlign.center, style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold))),
+                      Expanded(flex: 2, child: Text(creditCol > 0 ? creditCol.toStringAsFixed(2) : '0', textAlign: TextAlign.center, style: const TextStyle(color: Colors.green))),
                     ],
                   ),
                 );
