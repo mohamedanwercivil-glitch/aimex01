@@ -15,23 +15,12 @@ import '../../data/draft_store.dart';
 import '../../services/finance_service.dart';
 import '../../state/day_state.dart';
 import '../../state/cash_state.dart';
-
-class SaleItem {
-  final String name;
-  final double qty;
-  final double price;
-
-  SaleItem({
-    required this.name,
-    required this.qty,
-    required this.price,
-  });
-
-  double get total => qty * price;
-}
+import '../../models/sale_item.dart';
 
 class NewSaleScreen extends StatefulWidget {
-  const NewSaleScreen({super.key});
+  final String? editInvoiceId; 
+
+  const NewSaleScreen({super.key, this.editInvoiceId});
 
   @override
   State<NewSaleScreen> createState() => _NewSaleScreenState();
@@ -57,6 +46,8 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
   String paymentType = 'كاش';
   String? selectedWallet;
   bool _isSaving = false;
+  String? originalInvoiceNumber;
+  bool _isReturnMode = false;
 
   List<SaleItem> items = [];
   int? editingIndex;
@@ -68,11 +59,39 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
   @override
   void initState() {
     super.initState();
-    _loadDraft();
+    if (widget.editInvoiceId != null) {
+      _loadInvoiceForEdit(widget.editInvoiceId!);
+    } else {
+      _loadDraft();
+    }
     
     customerController.addListener(_saveDraft);
     paidAmountController.addListener(_saveDraft);
     discountController.addListener(_saveDraft);
+  }
+
+  void _loadInvoiceForEdit(String invoiceId) {
+    final allRecords = DayRecordsStore.getAll();
+    final invoiceRecords = allRecords.where((r) => r['invoiceId'] == invoiceId).toList();
+    
+    if (invoiceRecords.isNotEmpty) {
+      final first = invoiceRecords.first;
+      setState(() {
+        customerController.text = first['customer'] ?? '';
+        paymentType = first['paymentType'] ?? 'كاش';
+        selectedWallet = first['wallet'];
+        discountController.text = (first['discount'] ?? 0).toString();
+        paidAmountController.text = (first['paidAmount'] ?? 0).toString();
+        originalInvoiceNumber = first['invoiceNumber']?.toString();
+        
+        items = invoiceRecords.map((e) => SaleItem(
+          name: e['item'],
+          qty: (e['qty'] as num).toDouble(),
+          price: (e['price'] as num).toDouble(),
+          isReturn: e['isReturn'] ?? false,
+        )).toList();
+      });
+    }
   }
 
   void _loadDraft() {
@@ -89,6 +108,7 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
           name: e['name'],
           qty: (e['qty'] as num).toDouble(),
           price: (e['price'] as num).toDouble(),
+          isReturn: e['isReturn'] ?? false,
         )).toList();
       });
     } else {
@@ -98,14 +118,14 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
   }
 
   void _saveDraft() {
-    if (_isSaving) return;
+    if (_isSaving || widget.editInvoiceId != null) return; 
     DraftStore.saveSalesDraft(
       customer: customerController.text,
       paymentType: paymentType,
       wallet: selectedWallet,
       discount: discountController.text,
       paidAmount: paidAmountController.text,
-      items: items,
+      items: items.map((e) => {'name': e.name, 'qty': e.qty, 'price': e.price, 'isReturn': e.isReturn}).toList(),
     );
   }
 
@@ -129,6 +149,8 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
                 discountController.text = '0';
                 paymentType = 'كاش';
                 selectedWallet = null;
+                originalInvoiceNumber = null;
+                _isReturnMode = false;
               });
               DraftStore.clearSalesDraft();
               Navigator.pop(context);
@@ -183,25 +205,33 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
       return;
     }
 
-    final existingIndex = items.indexWhere((item) => item.name == name);
+    final bool itemExists = InventoryStore.getAllItems().any((e) => e['name'] == name);
+    if (!itemExists) {
+      ToastService.show('هذا الصنف غير موجود في المخزن، يجب اختياره من القائمة');
+      return;
+    }
+
+    final existingIndex = items.indexWhere((item) => item.name == name && item.isReturn == _isReturnMode);
     if (existingIndex != -1 && existingIndex != editingIndex) {
-      ToastService.show('هذا البند موجود بالفعل في الفاتورة');
+      ToastService.show('هذا البند موجود بالفعل في الفاتورة بنفس الحالة (بيع/مرتجع)');
       _scrollToItem(name);
       return;
     }
 
-    final stockQty = InventoryStore.getItemQty(name);
-    if (qty > stockQty && editingIndex == null) {
-      ToastService.show('الكمية المتاحة في المخزن لهذا الصنف حالياً هي: $stockQty');
-      return;
+    if (!_isReturnMode) {
+      final stockQty = InventoryStore.getItemQty(name);
+      if (qty > stockQty && editingIndex == null && widget.editInvoiceId == null) {
+        ToastService.show('الكمية المتاحة في المخزن لهذا الصنف حالياً هي: $stockQty');
+        return;
+      }
     }
 
     setState(() {
       if (editingIndex != null) {
-        items[editingIndex!] = SaleItem(name: name, qty: qty, price: price);
+        items[editingIndex!] = SaleItem(name: name, qty: qty, price: price, isReturn: _isReturnMode);
         editingIndex = null;
       } else {
-        items.add(SaleItem(name: name, qty: qty, price: price));
+        items.add(SaleItem(name: name, qty: qty, price: price, isReturn: _isReturnMode));
       }
       itemController.clear();
       qtyController.clear();
@@ -229,7 +259,48 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
         ? 0.0
         : double.tryParse(paidAmountController.text) ?? 0.0;
     
+    if (total > 0 && (paymentType == 'كاش' || paymentType == 'تحويل') && paidAmountValue < total) {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('تنبيه: المبلغ غير مكتمل'),
+          content: Text('المبلغ المدفوع ($paidAmountValue) أقل من صافي الفاتورة ($total).\n\nهل تريد حفظ الفاتورة وترحيل الباقي (${(total - paidAmountValue).toStringAsFixed(2)}) كمديونية على العميل؟'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false), 
+              child: const Text('تعديل المبلغ'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true), 
+              child: const Text('موافق، حفظ الفاتورة', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      );
+
+      if (confirm != true) return; 
+    }
+
     await _performSave(paidAmountValue);
+  }
+
+  String _calculateNewInvoiceNumber() {
+    if (originalInvoiceNumber == null) {
+      return DayRecordsStore.getNextInvoiceNumber('sale').toString();
+    }
+    
+    String baseNumber = originalInvoiceNumber!.split(RegExp(r'[-.]'))[0];
+    final allRecords = DayRecordsStore.getAll();
+    final relatedInvoices = allRecords
+      .where((r) => r['type'] == 'sale' && r['invoiceNumber'] != null)
+      .map((r) => r['invoiceNumber'].toString())
+      .where((num) => num.startsWith(baseNumber))
+      .toSet();
+      
+    int nextSuffixNumber = relatedInvoices.length;
+    String suffix = nextSuffixNumber.toString().padLeft(2, '0');
+    
+    return "$baseNumber.$suffix";
   }
 
   Future<void> _performSave(double paidAmountValue) async {
@@ -237,11 +308,14 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
 
     try {
       final customer = customerController.text.trim();
-      
       final previousBalance = CustomerStore.getBalance(customer);
 
       for (final item in items) {
-        InventoryStore.sellItem(item.name, item.qty);
+        if (item.isReturn) {
+          InventoryStore.returnItem(item.name, item.qty);
+        } else {
+          InventoryStore.sellItem(item.name, item.qty);
+        }
       }
 
       CustomerStore.addCustomer(customer);
@@ -258,9 +332,15 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
           walletName: paymentType == 'تحويل' ? selectedWallet : null,
         );
         context.read<DayState>().addSale(paidAmountValue);
+      } else if (paidAmountValue < 0) {
+        FinanceService.withdraw(
+          amount: paidAmountValue.abs(),
+          paymentType: paymentType,
+          walletName: paymentType == 'تحويل' ? selectedWallet : null,
+        );
       }
 
-      final invoiceNumber = DayRecordsStore.getNextInvoiceNumber('sale').toString();
+      final invoiceNumber = _calculateNewInvoiceNumber();
       const uuid = Uuid();
       final invoiceId = uuid.v4();
       final now = DateTime.now().toString();
@@ -275,6 +355,7 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
           'qty': item.qty,
           'price': item.price,
           'total': item.total,
+          'isReturn': item.isReturn,
           'invoiceTotal': total,
           'paidAmount': paidAmountValue,
           'dueAmount': dueAmount,
@@ -307,9 +388,17 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
         paymentType = 'كاش';
         selectedWallet = null;
         editingIndex = null;
+        originalInvoiceNumber = null;
+        _isReturnMode = false;
       });
-      _customerFocusNode.requestFocus();
-      ToastService.show('تم حفظ الفاتورة وتحديث الرصيد');
+      
+      if (widget.editInvoiceId != null) {
+        Navigator.pop(context); 
+      } else {
+        _customerFocusNode.requestFocus();
+      }
+      
+      ToastService.show('تم حفظ الفاتورة بنجاح');
     } catch (e) {
       ToastService.show('حدث خطأ أثناء الحفظ');
     } finally {
@@ -338,12 +427,10 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
       newBalance: newBalance,
     );
 
-    // 1. مشاركة الفاتورة الحالية (مجلد مؤقت)
     final tempDir = await getTemporaryDirectory();
     final tempFile = File('${tempDir.path}/invoice_$invoiceId.pdf');
     await tempFile.writeAsBytes(pdfData);
 
-    // 2. حفظ نسخة دائمة لجمعها عند إغلاق اليوم
     final appDir = await getApplicationDocumentsDirectory();
     final invoicesDir = Directory('${appDir.path}/daily_invoices');
     if (!await invoicesDir.exists()) {
@@ -365,22 +452,23 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('فاتورة بيع'),
+        title: Text(widget.editInvoiceId != null ? 'تعديل فاتورة $originalInvoiceNumber' : 'فاتورة بيع جديدة'),
         actions: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            child: ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                elevation: 2,
+          if (widget.editInvoiceId == null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  elevation: 2,
+                ),
+                onPressed: _isSaving ? null : _clearFullInvoice,
+                icon: const Icon(Icons.delete_forever, size: 20),
+                label: const Text('مسح الفاتورة', style: TextStyle(fontWeight: FontWeight.bold)),
               ),
-              onPressed: _isSaving ? null : _clearFullInvoice,
-              icon: const Icon(Icons.delete_forever, size: 20),
-              label: const Text('مسح الفاتورة', style: TextStyle(fontWeight: FontWeight.bold)),
             ),
-          ),
         ],
       ),
       body: Padding(
@@ -396,46 +484,87 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
                 label: 'اسم العميل',
                 onSearch: (value) => CustomerStore.searchCustomers(value),
                 onSelected: (_) {
-                  _itemFocusNode.requestFocus();
+                  FocusScope.of(context).requestFocus(_itemFocusNode);
                   _saveDraft();
                 },
                 textInputAction: TextInputAction.next,
               ),
               const SizedBox(height: 12),
-              SearchableDropdownField(
-                focusNode: _itemFocusNode,
-                enabled: dayStarted && !_isSaving,
-                controller: itemController,
-                label: 'اسم الصنف',
-                onSearch: (value) => InventoryStore.searchAvailableItems(value)
-                    .map((e) => "${e['name']} | (المتاح: ${e['qty']})")
-                    .toList(),
-                onSelected: (value) {
-                  final name = value.split('|')[0].trim();
-                  itemController.text = name;
-                  _qtyFocusNode.requestFocus();
-                },
-                textInputAction: TextInputAction.next,
+              Row(
+                children: [
+                  Expanded(
+                    child: SearchableDropdownField(
+                      focusNode: _itemFocusNode,
+                      enabled: dayStarted && !_isSaving,
+                      controller: itemController,
+                      label: 'اسم الصنف',
+                      onSearch: (value) => InventoryStore.getAllItems()
+                          .where((e) => e['name'].toString().toLowerCase().contains(value.toLowerCase()))
+                          .map((e) => "${e['name']} | (المتاح: ${e['quantity']})")
+                          .toList(),
+                      onSelected: (value) {
+                        final name = value.split('|')[0].trim();
+                        itemController.text = name;
+                        
+                        // 🔥 اقتراح سعر البيع من آخر عملية بيع
+                        final lastPrice = DayRecordsStore.getLastItemSalePrice(name);
+                        if (lastPrice != null) {
+                          priceController.text = lastPrice.toString();
+                        } else {
+                          priceController.clear();
+                        }
+
+                        _qtyFocusNode.requestFocus();
+                      },
+                      textInputAction: TextInputAction.next,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: _isReturnMode ? Colors.orange.shade100 : Colors.blue.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        const Text('مرتجع'),
+                        Switch(
+                          value: _isReturnMode,
+                          onChanged: (v) => setState(() => _isReturnMode = v),
+                          activeColor: Colors.orange,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
-              SelectableTextField(
-                enabled: dayStarted && !_isSaving,
-                controller: qtyController,
-                focusNode: _qtyFocusNode,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                labelText: 'الكمية',
-                textInputAction: TextInputAction.next,
-                onSubmitted: (_) => _priceFocusNode.requestFocus(),
-              ),
-              const SizedBox(height: 12),
-              SelectableTextField(
-                enabled: dayStarted && !_isSaving,
-                controller: priceController,
-                focusNode: _priceFocusNode,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                labelText: 'سعر البيع',
-                textInputAction: TextInputAction.done,
-                onSubmitted: (_) => _addItem(),
+              Row(
+                children: [
+                  Expanded(
+                    child: SelectableTextField(
+                      enabled: dayStarted && !_isSaving,
+                      controller: qtyController,
+                      focusNode: _qtyFocusNode,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      labelText: 'الكمية',
+                      textInputAction: TextInputAction.next,
+                      onSubmitted: (_) => _priceFocusNode.requestFocus(),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: SelectableTextField(
+                      enabled: dayStarted && !_isSaving,
+                      controller: priceController,
+                      focusNode: _priceFocusNode,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      labelText: 'سعر الوحدة',
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => _addItem(),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
               ElevatedButton(
@@ -446,9 +575,10 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
               ...items.asMap().entries.map((entry) {
                 final index = entry.key;
                 final item = entry.value;
-                final key = _itemKeys.putIfAbsent(item.name, () => GlobalKey());
+                final key = _itemKeys.putIfAbsent("${item.name}_${item.isReturn}", () => GlobalKey());
                 return Card(
                   key: key,
+                  color: item.isReturn ? Colors.orange.shade50 : null,
                   child: ListTile(
                     onTap: (dayStarted && !_isSaving) ? () {
                       setState(() {
@@ -456,10 +586,11 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
                         itemController.text = item.name;
                         qtyController.text = item.qty.toString();
                         priceController.text = item.price.toString();
+                        _isReturnMode = item.isReturn;
                         _itemFocusNode.requestFocus();
                       });
                     } : null,
-                    title: Text(item.name),
+                    title: Text("${item.name} ${item.isReturn ? '(مرتجع)' : ''}"),
                     subtitle: Text('كمية: ${item.qty} | سعر: ${item.price} | إجمالي: ${item.total}'),
                     trailing: IconButton(
                       icon: const Icon(Icons.delete, color: Colors.red),
@@ -485,7 +616,7 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
                 onSubmitted: (_) => _paidAmountFocusNode.requestFocus(),
               ),
               const SizedBox(height: 12),
-              Text('صافي الفاتورة: ${total.toStringAsFixed(2)}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              Text('صافي الفاتورة: ${total.toStringAsFixed(2)}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green)),
               const SizedBox(height: 20),
               DropdownButtonFormField<String>(
                 value: paymentType,
@@ -510,7 +641,7 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
                   controller: paidAmountController,
                   focusNode: _paidAmountFocusNode,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  labelText: 'المبلغ المدفوع',
+                  labelText: 'المبلغ المدفوع (أو المردود للعميل لو بالسالب)',
                   textInputAction: TextInputAction.done,
                   onSubmitted: (_) => _saveSale(),
                 ),
@@ -533,7 +664,7 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
                 height: 50,
                 child: ElevatedButton(
                   onPressed: (dayStarted && !_isSaving) ? _saveSale : null,
-                  child: _isSaving ? const CircularProgressIndicator(color: Colors.white) : const Text('حفظ الفاتورة'),
+                  child: _isSaving ? const CircularProgressIndicator(color: Colors.white) : const Text('حفظ وإرسال الفاتورة'),
                 ),
               ),
             ],

@@ -51,56 +51,106 @@ class _GlobalCashHeaderState extends State<GlobalCashHeader> {
     final remainingKeys = allBalances.keys.where((key) => !orderedKeys.contains(key)).toList();
     orderedKeys.addAll(remainingKeys);
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 2.0),
-      elevation: 1.0,
+    return Container(
+      // استخدام Container بدلاً من Card لتقليل الهوامش الإجبارية
+      margin: const EdgeInsets.fromLTRB(8, 2, 8, 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(4.0),
+        padding: const EdgeInsets.all(8.0),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Text(
-              'اجمالي الفلوس: ${cashState.totalMoney.toStringAsFixed(1)}',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  'اجمالي الفلوس: ',
+                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w500),
+                ),
+                Text(
+                  cashState.totalMoney.toStringAsFixed(1),
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: theme.primaryColor,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: 6),
             const Divider(height: 1),
-            const SizedBox(height: 2),
-            Wrap(
-              spacing: 4.0,
-              runSpacing: 0.0,
-              alignment: WrapAlignment.center,
-              children: orderedKeys.map((key) {
+            const SizedBox(height: 8),
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                crossAxisSpacing: 6,
+                mainAxisSpacing: 6,
+                childAspectRatio: 2.2,
+              ),
+              itemCount: orderedKeys.length,
+              itemBuilder: (context, index) {
+                final key = orderedKeys[index];
                 final value = allBalances[key]!;
-                return Chip(
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  label: Text('${key}: ${value.toStringAsFixed(1)}'),
-                  padding: const EdgeInsets.symmetric(horizontal: 2.0, vertical: 0.0),
-                  labelStyle: theme.textTheme.labelSmall,
-                  backgroundColor: theme.colorScheme.secondary.withOpacity(0.1),
+                return Container(
+                  decoration: BoxDecoration(
+                    color: theme.primaryColor.withOpacity(0.04),
+                    border: Border.all(color: theme.primaryColor.withOpacity(0.15)),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        key,
+                        style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold),
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        value.toStringAsFixed(1),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: theme.primaryColor,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
                 );
-              }).toList(),
+              },
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 8),
             SizedBox(
-              height: 28, // Adjust height of the button
+              height: 36,
               width: double.infinity,
-              child: ElevatedButton(
+              child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  padding: EdgeInsets.zero,
-                  textStyle: theme.textTheme.labelMedium,
+                  backgroundColor: Colors.teal,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
                 onPressed: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) => const TransferScreen(),
-                    ),
+                    MaterialPageRoute(builder: (_) => const TransferScreen()),
                   );
                 },
-                child: const Text('تحويل الفلوس'),
+                icon: const Icon(Icons.compare_arrows, size: 18),
+                label: const Text('تحويل الفلوس', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
               ),
             )
           ],

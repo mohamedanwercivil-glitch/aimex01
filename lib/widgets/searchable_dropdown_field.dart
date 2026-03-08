@@ -31,109 +31,151 @@ class _SearchableDropdownFieldState
     extends State<SearchableDropdownField> {
   late final FocusNode _focusNode;
   List<String> suggestions = [];
+  final LayerLink _layerLink = LayerLink();
+  OverlayEntry? _overlayEntry;
 
   @override
   void initState() {
     super.initState();
     _focusNode = widget.focusNode ?? FocusNode();
-    _focusNode.addListener(() {
-      if (!_focusNode.hasFocus) {
-        setState(() {
-          suggestions = [];
-        });
+    _focusNode.addListener(_onFocusChange);
+  }
+
+  String _normalizeArabic(String text) {
+    return text
+        .replaceAll(RegExp(r'[أإآ]'), 'ا')
+        .replaceAll('ة', 'ه')
+        .replaceAll('ى', 'ي')
+        .toLowerCase()
+        .trim();
+  }
+
+  void _onFocusChange() {
+    if (_focusNode.hasFocus) {
+      if (widget.controller.text.isNotEmpty) {
+        _updateSuggestions(widget.controller.text);
+        _showOverlay();
       }
-    });
+    } else {
+      _hideOverlay();
+    }
+  }
+
+  void _showOverlay() {
+    _hideOverlay();
+    _overlayEntry = _createOverlayEntry();
+    Overlay.of(context).insert(_overlayEntry!);
+  }
+
+  void _hideOverlay() {
+    _overlayEntry?.remove();
+    _overlayEntry = null;
+  }
+
+  OverlayEntry _createOverlayEntry() {
+    RenderBox renderBox = context.findRenderObject() as RenderBox;
+    var size = renderBox.size;
+
+    return OverlayEntry(
+      builder: (context) => Positioned(
+        width: size.width,
+        child: CompositedTransformFollower(
+          link: _layerLink,
+          showWhenUnlinked: false,
+          offset: Offset(0.0, size.height + 5.0),
+          child: Material(
+            elevation: 4.0,
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              constraints: const BoxConstraints(maxHeight: 250),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: suggestions.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.all(16.0),
+                      child: Text('لا يوجد نتائج متطابقة', textAlign: TextAlign.center),
+                    )
+                  : ListView.separated(
+                      padding: EdgeInsets.zero,
+                      shrinkWrap: true,
+                      itemCount: suggestions.length,
+                      separatorBuilder: (context, index) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final suggestion = suggestions[index];
+                        return ListTile(
+                          title: Text(suggestion),
+                          onTap: () {
+                            final selectedValue = suggestion.split('|')[0].trim();
+                            widget.controller.text = selectedValue;
+                            if (widget.onSelected != null) {
+                              widget.onSelected!(selectedValue);
+                            }
+                            // نقوم بإخفاء الـ overlay قبل إلغاء التركيز أو الانتقال
+                            _hideOverlay();
+                          },
+                        );
+                      },
+                    ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _hideOverlay();
+    if (widget.focusNode == null) _focusNode.dispose();
+    super.dispose();
   }
 
   void _updateSuggestions(String value) {
+    if (!mounted) return;
+    
     setState(() {
-      suggestions = widget.onSearch(value);
+      final originalResults = widget.onSearch(value);
+      final normalizedQuery = _normalizeArabic(value);
+
+      if (normalizedQuery.isEmpty) {
+        suggestions = [];
+        _hideOverlay();
+      } else {
+        suggestions = originalResults.where((item) {
+          return _normalizeArabic(item).contains(normalizedQuery);
+        }).toList();
+        
+        if (_focusNode.hasFocus) _showOverlay();
+      }
     });
+    _overlayEntry?.markNeedsBuild();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        TextField(
-          enabled: widget.enabled,
-          controller: widget.controller,
-          focusNode: _focusNode,
-          decoration: InputDecoration(
-            labelText: widget.label,
-            border: const OutlineInputBorder(),
-          ),
-          onChanged: _updateSuggestions,
-          textInputAction: widget.textInputAction,
-          onSubmitted: widget.onSubmitted,
+    return CompositedTransformTarget(
+      link: _layerLink,
+      child: TextField(
+        enabled: widget.enabled,
+        controller: widget.controller,
+        focusNode: _focusNode,
+        decoration: InputDecoration(
+          labelText: widget.label,
+          border: const OutlineInputBorder(),
+          suffixIcon: const Icon(Icons.search),
         ),
-        if (_focusNode.hasFocus && suggestions.isNotEmpty)
-          Container(
-            constraints: const BoxConstraints(maxHeight: 300),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey.shade300),
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(4),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: ListView.separated(
-              padding: EdgeInsets.zero,
-              shrinkWrap: true,
-              itemCount: suggestions.length,
-              separatorBuilder: (context, index) => const Divider(height: 1),
-              itemBuilder: (context, index) {
-                final suggestion = suggestions[index];
-                
-                // نستخدم الفاصل | لفصل الاسم عن المعلومات الإضافية بأمان
-                final parts = suggestion.split('|');
-                final mainText = parts[0].trim();
-                final extraInfo = parts.length > 1 ? parts[1].trim() : '';
-
-                return ListTile(
-                  dense: true,
-                  title: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          mainText,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                      if (extraInfo.isNotEmpty)
-                        Text(
-                          extraInfo,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                    ],
-                  ),
-                  onTap: () {
-                    widget.controller.text = mainText;
-                    setState(() {
-                      suggestions.clear();
-                    });
-                    _focusNode.unfocus();
-                    if (widget.onSelected != null) {
-                      widget.onSelected!(mainText);
-                    }
-                  },
-                );
-              },
-            ),
-          ),
-      ],
+        onChanged: _updateSuggestions,
+        onTap: () {
+          if (widget.controller.text.isNotEmpty) {
+            _updateSuggestions(widget.controller.text);
+          }
+        },
+        textInputAction: widget.textInputAction,
+        onSubmitted: widget.onSubmitted,
+      ),
     );
   }
 }

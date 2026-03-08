@@ -13,13 +13,27 @@ class BaseScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // إذا كان العنوان فارغاً، نخفي الـ AppBar تماماً
+    final bool showAppBar = title.isNotEmpty;
+
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
-      body: Column(
-        children: [
-          const GlobalCashHeader(),
-          Expanded(child: body),
-        ],
+      appBar: showAppBar ? AppBar(title: Text(title)) : null,
+      body: SafeArea(
+        child: GestureDetector(
+          onTap: () {
+            // إخفاء الكيبورد والقوائم عند الضغط في أي مكان فارغ
+            FocusScope.of(context).unfocus();
+          },
+          behavior: HitTestBehavior.opaque,
+          child: Column(
+            children: [
+              const GlobalCashHeader(),
+              Expanded(
+                child: body,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

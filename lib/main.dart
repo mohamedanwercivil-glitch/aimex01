@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'data/supplier_store.dart';
+import 'data/customer_store.dart';
 import 'screens/home_screen.dart';
 import 'services/background_service.dart';
 import 'services/notification_service.dart';
@@ -25,6 +26,7 @@ void main() async {
   await Hive.openBox('inventoryBox');
   await Hive.openBox('customerBox');
   await SupplierStore.init();
+  await CustomerStore.init();
 
   // =========================
   // Box خاص بتسجيل كل عمليات اليوم

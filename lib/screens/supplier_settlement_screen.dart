@@ -1,4 +1,4 @@
-import 'package:aimex/models/supplier.dart';
+import 'package:aimex/widgets/searchable_dropdown_field.dart';
 import 'package:aimex/services/toast_service.dart';
 import 'package:aimex/widgets/selectable_text_field.dart';
 import 'package:flutter/material.dart';
@@ -6,8 +6,7 @@ import '../services/finance_service.dart';
 import '../state/day_state.dart';
 import '../data/day_records_store.dart';
 import '../state/cash_state.dart';
-import 'package:hive_flutter/hive_flutter.dart';
-
+import '../data/supplier_store.dart';
 
 class SupplierSettlementScreen extends StatefulWidget {
   const SupplierSettlementScreen({super.key});
@@ -52,13 +51,16 @@ class _SupplierSettlementScreenState
     final result = FinanceService.withdraw(
       amount: amount,
       paymentType: selectedWallet == 'نقدي' ? 'كاش' : 'تحويل',
-      walletName: selectedWallet,
+      walletName: selectedWallet == 'نقدي' ? null : selectedWallet,
     );
 
     if (!result.success) {
       ToastService.show(result.message);
       return;
     }
+
+    // تحديث رصيد المورد في المخزن (سداد ينقص المديونية)
+    SupplierStore.updateBalance(supplier, -amount);
 
     DayRecordsStore.addRecord({
       'type': 'supplier_settlement',
@@ -68,13 +70,11 @@ class _SupplierSettlementScreenState
       'date': DateTime.now().toString(),
     });
 
-    //TODO: I will add a supplier store later.
-
     amountController.clear();
     supplierController.clear();
     _supplierFocusNode.requestFocus();
 
-    ToastService.show('تم تسجيل سداد المورد');
+    ToastService.show('تم تسجيل سداد المورد وتحديث الحساب');
   }
 
   @override
@@ -82,55 +82,55 @@ class _SupplierSettlementScreenState
     final wallets = ['نقدي', ...CashState.instance.wallets.keys.toList()];
 
     return Scaffold(
-      appBar:
-      AppBar(title: const Text('سداد الموردين')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            SelectableTextField(
-              controller: supplierController,
-              focusNode: _supplierFocusNode,
-              labelText: 'اسم المورد',
-              textInputAction: TextInputAction.next,
-              onSubmitted: (_) => _amountFocusNode.requestFocus(),
-            ),
-            const SizedBox(height: 12),
-            SelectableTextField(
-              controller: amountController,
-              focusNode: _amountFocusNode,
-              keyboardType:
-              TextInputType.number,
-              labelText: 'المبلغ المدفوع',
-              textInputAction: TextInputAction.done,
-              onSubmitted: (_) => _saveSettlement(),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              value: selectedWallet,
-              decoration: const InputDecoration(
-                labelText: 'اختر الخزنة',
-                border: OutlineInputBorder(),
+      appBar: AppBar(title: const Text('سداد الموردين')),
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              SearchableDropdownField(
+                controller: supplierController,
+                focusNode: _supplierFocusNode,
+                label: 'اسم المورد',
+                onSearch: (value) => SupplierStore.searchSuppliers(value),
+                onSelected: (_) => _amountFocusNode.requestFocus(),
+                textInputAction: TextInputAction.next,
               ),
-              items: wallets
-                  .map((wallet) => DropdownMenuItem(
-                        value: wallet,
-                        child: Text(wallet),
-                      ))
-                  .toList(),
-              onChanged: (value) => setState(() => selectedWallet = value),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: _saveSettlement,
-                child:
-                const Text('حفظ السداد'),
+              const SizedBox(height: 12),
+              SelectableTextField(
+                controller: amountController,
+                focusNode: _amountFocusNode,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                labelText: 'المبلغ المدفوع',
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _saveSettlement(),
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: selectedWallet,
+                decoration: const InputDecoration(
+                  labelText: 'اختر الخزنة',
+                  border: OutlineInputBorder(),
+                ),
+                items: wallets
+                    .map((wallet) => DropdownMenuItem(
+                          value: wallet,
+                          child: Text(wallet),
+                        ))
+                    .toList(),
+                onChanged: (value) => setState(() => selectedWallet = value),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: _saveSettlement,
+                  child: const Text('حفظ السداد'),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

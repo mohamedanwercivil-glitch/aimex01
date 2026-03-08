@@ -4,7 +4,9 @@ import '../state/day_state.dart';
 import '../widgets/base_scaffold.dart';
 import 'start_day_screen.dart';
 import 'purchase_screen.dart';
-import 'sales/new_sale_screen.dart';
+import 'sales/sales_screen.dart';
+import 'sales/daily_invoices_screen.dart';
+import 'daily_purchase_invoices_screen.dart';
 import 'expenses_screen.dart';
 import 'withdraw_screen.dart';
 import 'inventory_screen.dart';
@@ -12,7 +14,7 @@ import 'end_day_screen.dart';
 import 'settlement_screen.dart';
 import 'supplier_settlement_screen.dart';
 import 'settings/import_screen.dart';
-import 'account_statement_screen.dart'; // إضافة الشاشة الجديدة
+import 'account_statement_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -24,174 +26,139 @@ class HomeScreen extends StatelessWidget {
         final dayStarted = dayState.dayStarted;
 
         return BaseScaffold(
-          title: 'الصفحة الرئيسية',
-          body: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                Expanded(
-                  child: GridView.count(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 16,
+          title: '', // تم إزالة العنوان
+          body: LayoutBuilder(
+            builder: (context, constraints) {
+              // تصميم جديد لواجهة مرنة
+              return SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                  child: Column(
                     children: [
-                      _buildCard(
-                        context,
-                        'بداية اليوم',
-                        Icons.wb_sunny,
-                        Colors.teal,
-                        const StartDayScreen(),
-                        enabled: !dayStarted,
+                      // زر بداية اليوم بالعرض الكامل
+                      if (!dayStarted)
+                        _buildFullWidthButton(
+                          context,
+                          'بداية اليوم',
+                          Icons.wb_sunny,
+                          Colors.teal,
+                          const StartDayScreen(),
+                        ),
+                      if (!dayStarted) const SizedBox(height: 16),
+
+                      // صف البيع والشراء
+                      Row(
+                        children: [
+                          _buildHalfWidthCard(context, 'بيع / مرتجع', Icons.point_of_sale, Colors.green, const SalesScreen(), enabled: dayStarted),
+                          const SizedBox(width: 16),
+                          _buildHalfWidthCard(context, 'شراء', Icons.shopping_cart, Colors.blue, const PurchaseScreen(), enabled: dayStarted),
+                        ],
                       ),
-                      _buildCard(
-                        context,
-                        'شراء',
-                        Icons.shopping_cart,
-                        Colors.blue,
-                        const PurchaseScreen(),
-                        enabled: dayStarted,
+                      const SizedBox(height: 16),
+
+                      // صف فواتير البيع والشراء
+                      Row(
+                        children: [
+                          _buildHalfWidthCard(context, 'فواتير البيع', Icons.description, Colors.blueGrey, const DailyInvoicesScreen()),
+                          const SizedBox(width: 16),
+                          _buildHalfWidthCard(context, 'فواتير الشراء', Icons.receipt_long, Colors.blue.shade800, const DailyPurchaseInvoicesScreen()),
+                        ],
                       ),
-                      _buildCard(
-                        context,
-                        'بيع',
-                        Icons.point_of_sale,
-                        Colors.green,
-                        const NewSaleScreen(),
-                        enabled: dayStarted,
+                      const SizedBox(height: 16),
+
+                      // صف سداد العملاء والموردين
+                      Row(
+                        children: [
+                          _buildHalfWidthCard(context, 'سداد العملاء', Icons.payments, Colors.indigo, const SettlementScreen(), enabled: dayStarted),
+                          const SizedBox(width: 16),
+                          _buildHalfWidthCard(context, 'سداد الموردين', Icons.assignment_return, Colors.brown, const SupplierSettlementScreen(), enabled: dayStarted),
+                        ],
                       ),
-                      _buildCard(
-                        context,
-                        'سداد العملاء',
-                        Icons.payments,
-                        Colors.indigo,
-                        const SettlementScreen(),
-                        enabled: dayStarted,
+                      const SizedBox(height: 16),
+
+                      // صف المسحوبات والمصروفات
+                      Row(
+                        children: [
+                           _buildHalfWidthCard(context, 'مسحوبات شخصية', Icons.account_balance_wallet, Colors.orange, const WithdrawScreen(), enabled: dayStarted),
+                           const SizedBox(width: 16),
+                           _buildHalfWidthCard(context, 'مصروفات الشغل', Icons.receipt, Colors.purple, const ExpensesScreen(), enabled: dayStarted),
+                        ],
                       ),
-                      _buildCard(
-                        context,
-                        'كشف حساب', // الزر الجديد
-                        Icons.account_balance,
-                        Colors.cyan.shade700,
-                        const AccountStatementScreen(),
-                        enabled: true,
+                      const SizedBox(height: 16),
+                      
+                      // الصف الأخير: كشف حساب وجرد
+                      Row(
+                        children: [
+                          _buildHalfWidthCard(context, 'كشف حساب', Icons.account_balance, Colors.cyan.shade700, const AccountStatementScreen()),
+                          const SizedBox(width: 16),
+                          _buildHalfWidthCard(context, 'جرد المخزون', Icons.inventory, Colors.red, const InventoryScreen()),
+                        ],
                       ),
-                      _buildCard(
-                        context,
-                        'مصروفات الشغل',
-                        Icons.receipt,
-                        Colors.purple,
-                        const ExpensesScreen(),
-                        enabled: dayStarted,
-                      ),
-                      _buildCard(
-                        context,
-                        'مسحوبات شخصية',
-                        Icons.account_balance_wallet,
-                        Colors.orange,
-                        const WithdrawScreen(),
-                        enabled: dayStarted,
-                      ),
-                      _buildCard(
-                        context,
-                        'سداد الموردين',
-                        Icons.assignment_return,
-                        Colors.brown,
-                        const SupplierSettlementScreen(),
-                        enabled: dayStarted,
-                      ),
-                      _buildCard(
-                        context,
-                        'جرد المخزون',
-                        Icons.search,
-                        Colors.red,
-                        const InventoryScreen(),
-                        enabled: true,
-                      ),
+                      const SizedBox(height: 24),
+
+                      // زر إنهاء اليوم
+                      if (dayStarted)
+                        _buildFullWidthButton(context, 'إنهاء اليوم', Icons.done_all, Colors.red.shade700, const EndDayScreen()),
+                      const SizedBox(height: 12),
+                      // زر استيراد
+                      _buildFullWidthButton(context, 'استيراد من اكسل', Icons.file_upload, Colors.grey.shade700, const ImportScreen()),
                     ],
                   ),
                 ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      disabledBackgroundColor: Colors.grey, 
-                    ),
-                    onPressed: dayStarted
-                        ? () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const EndDayScreen(),
-                              ),
-                            );
-                          }
-                        : null,
-                    child: const Text('إنهاء اليوم'),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ImportScreen(),
-                        ),
-                      );
-                    },
-                    child: const Text('استيراد من اكسل'),
-                  ),
-                ),
-              ],
-            ),
+              );
+            },
           ),
         );
       },
     );
   }
 
-  Widget _buildCard(
-    BuildContext context,
-    String title,
-    IconData icon,
-    Color color,
-    Widget screen, {
-    bool enabled = true,
-  }) {
-    return GestureDetector(
-      onTap: enabled
-          ? () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => screen),
-              );
-            }
-          : null,
-      child: Container(
-        decoration: BoxDecoration(
-          color: enabled ? color : Colors.grey,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 40, color: Colors.white),
-            const SizedBox(height: 12),
-            Text(
-              title,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
+  Widget _buildHalfWidthCard(BuildContext context, String title, IconData icon, Color color, Widget screen, {bool enabled = true}) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: enabled
+            ? () => Navigator.push(context, MaterialPageRoute(builder: (_) => screen))
+            : null,
+        child: Container(
+          height: 100,
+          decoration: BoxDecoration(
+            color: enabled ? color : Colors.grey.shade400,
+            borderRadius: BorderRadius.circular(15),
+            boxShadow: enabled ? [BoxShadow(color: color.withOpacity(0.3), blurRadius: 5, offset: const Offset(0, 3))] : [],
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 36, color: Colors.white),
+              const SizedBox(height: 8),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildFullWidthButton(BuildContext context, String title, IconData icon, Color color, Widget screen, {bool enabled = true}) {
+    return SizedBox(
+      width: double.infinity,
+      height: 60,
+      child: ElevatedButton.icon(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: enabled ? color : Colors.grey.shade400,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          elevation: 4,
+        ),
+        onPressed: enabled 
+            ? () => Navigator.push(context, MaterialPageRoute(builder: (_) => screen))
+            : null,
+        icon: Icon(icon, size: 28),
+        label: Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
       ),
     );
   }

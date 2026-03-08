@@ -2,14 +2,25 @@ import 'dart:io';
 import 'package:excel/excel.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:hive/hive.dart';
+import 'package:intl/intl.dart';
+import '../utils/arabic_utils.dart';
 
 class CustomerStore {
   static final Box box = Hive.box('customerBox');
+  static const _infoBoxName = 'customerInfoBox';
+  static List<String> _cachedCustomers = [];
 
-  // =========================
-  // استيراد العملاء وأرصدتهم من إكسيل
-  // التنسيق حسب ملف المستخدم: A:الاسم، B:مدين (0)، C:دائن (المبلغ اللي ليا عنده)
-  // =========================
+  static Future<void> init() async {
+    await Hive.openBox(_infoBoxName);
+    refreshCache(); // تحميل الأسماء في الذاكرة عند بدء التشغيل
+  }
+
+  static void refreshCache() {
+    _cachedCustomers = box.keys.map((k) => k.toString()).toList();
+  }
+
+  static Box get _infoBox => Hive.box(_infoBoxName);
+
   static Future<void> importWithBalances() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
@@ -20,65 +31,83 @@ class CustomerStore {
       final file = File(result.files.single.path!);
       final bytes = await file.readAsBytes();
       final excel = Excel.decodeBytes(bytes);
-
       final sheet = excel.tables[excel.tables.keys.first];
+      
+      final oldDate = "2000-01-01T00:00:00";
 
       if (sheet != null) {
         for (var i = 1; i < sheet.rows.length; i++) {
           final row = sheet.rows[i];
           if (row.isEmpty) continue;
-
           final name = row[0]?.value?.toString();
-          final colB = double.tryParse(row[1]?.value?.toString() ?? '0') ?? 0;
-          final colC = double.tryParse(row[2]?.value?.toString() ?? '0') ?? 0;
-
           if (name != null && name.trim().isNotEmpty) {
-            // حسب ملف المستخدم: عمود C هو "ليا عنده" (الرصيد الموجب)
-            // الرصيد = C - B ليكون الناتج 49099.5 (عليه فلوس)
-            final balance = colC - colB;
+            double balance = 0.0;
+            if (row.length > 1) {
+              balance += double.tryParse(row[1]?.value?.toString() ?? '0') ?? 0;
+            }
+            if (row.length > 2) {
+              balance -= double.tryParse(row[2]?.value?.toString() ?? '0') ?? 0;
+            }
             
-            // مسح القيمة القديمة وتحديثها بالرصيد الجديد من الإكسيل
-            box.put(name.trim(), balance);
+            final trimmedName = name.trim();
+            box.put(trimmedName, balance);
+            
+            if (!_infoBox.containsKey(trimmedName)) {
+              _infoBox.put(trimmedName, {'createdAt': oldDate});
+            }
           }
         }
       }
+      refreshCache(); // تحديث الكاش بعد الاستيراد
     }
   }
 
   static void addCustomer(String name) {
     if (name.trim().isEmpty) return;
-    if (!box.containsKey(name.trim())) {
-      box.put(name.trim(), 0.0);
+    final trimmedName = name.trim();
+    if (!box.containsKey(trimmedName)) {
+      box.put(trimmedName, 0.0);
+      _infoBox.put(trimmedName, {
+        'createdAt': DateTime.now().toIso8601String(),
+      });
+      refreshCache(); // تحديث الكاش عند إضافة عميل جديد
     }
   }
 
   static void updateBalance(String name, double amount) {
     final rawValue = box.get(name.trim(), defaultValue: 0.0);
-    double currentBalance = 0.0;
-    
-    if (rawValue is num) {
-      currentBalance = rawValue.toDouble();
-    }
-    
+    double currentBalance = (rawValue is num) ? rawValue.toDouble() : 0.0;
     box.put(name.trim(), currentBalance + amount);
   }
 
   static double getBalance(String name) {
     final rawValue = box.get(name.trim(), defaultValue: 0.0);
-    if (rawValue is num) {
-      return rawValue.toDouble();
-    }
-    return 0.0;
+    return (rawValue is num) ? rawValue.toDouble() : 0.0;
   }
 
   static List<String> searchCustomers(String query) {
-    return box.keys
-        .where((key) => key.toString().toLowerCase().contains(query.toLowerCase()))
-        .map((key) => key.toString())
+    if (query.isEmpty) return _cachedCustomers;
+    final normalizedQuery = ArabicUtils.normalize(query);
+    return _cachedCustomers
+        .where((key) => ArabicUtils.normalize(key).contains(normalizedQuery))
         .toList();
   }
 
   static List<String> getAllCustomers() {
-    return box.keys.map((key) => key.toString()).toList();
+    return _cachedCustomers;
+  }
+
+  static List<String> getNewCustomersToday(DateTime? startTime) {
+    if (startTime == null) return [];
+    return _infoBox.keys.where((key) {
+      final info = _infoBox.get(key);
+      if (info == null || info['createdAt'] == null) return false;
+      try {
+        final createdAt = DateTime.parse(info['createdAt']);
+        return createdAt.isAfter(startTime);
+      } catch (_) {
+        return false;
+      }
+    }).map((e) => e.toString()).toList();
   }
 }

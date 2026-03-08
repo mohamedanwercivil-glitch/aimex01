@@ -1,4 +1,5 @@
 import 'package:aimex/widgets/selectable_text_field.dart';
+import 'package:aimex/widgets/searchable_dropdown_field.dart';
 import 'package:flutter/material.dart';
 import '../state/day_state.dart';
 import '../state/cash_state.dart';
@@ -67,27 +68,31 @@ class _SettlementScreenState
       return;
     }
 
-    // 🔥 تسجيل السداد
+    // 🔥 تحديث رصيد العميل (السداد يطرح من المديونية)
+    CustomerStore.addCustomer(customer);
+    CustomerStore.updateBalance(customer, -amount);
+
+    // تسجيل السداد في السجلات
     DayRecordsStore.addRecord({
       'type': 'settlement',
       'customer': customer,
       'amount': amount,
       'paymentType': paymentType,
-      'wallet': selectedWallet,
+      'wallet': paymentType == 'تحويل' ? selectedWallet ?? '' : 'نقدي',
       'date': DateTime.now().toString(),
     });
-
-    CustomerStore.addCustomer(customer);
 
     amountController.clear();
     customerController.clear();
     selectedWallet = null;
-    _customerFocusNode.requestFocus();
+    
+    setState(() {}); 
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-          content: Text('تم تسجيل السداد')),
+          content: Text('تم تسجيل السداد وتحديث حساب العميل')),
     );
+    _customerFocusNode.requestFocus();
   }
 
   @override
@@ -102,31 +107,13 @@ class _SettlementScreenState
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-
-            Autocomplete<String>(
-              optionsBuilder: (text) =>
-                  CustomerStore.searchCustomers(
-                      text.text),
-              onSelected: (value) {
-                customerController.text = value;
-                _amountFocusNode.requestFocus();
-              },
-              fieldViewBuilder:
-                  (context, controller,
-                  focusNode, _) {
-                controller.text =
-                    customerController.text;
-                return SelectableTextField(
-                  controller: controller,
-                  focusNode: _customerFocusNode,
-                  labelText: 'اسم العميل',
-                  textInputAction: TextInputAction.next,
-                  onSubmitted: (_) => _amountFocusNode.requestFocus(),
-                  onChanged: (value) =>
-                  customerController.text =
-                      value,
-                );
-              },
+            SearchableDropdownField(
+              focusNode: _customerFocusNode,
+              controller: customerController,
+              label: 'اسم العميل',
+              onSearch: (value) => CustomerStore.searchCustomers(value),
+              onSelected: (_) => _amountFocusNode.requestFocus(),
+              textInputAction: TextInputAction.next,
             ),
 
             const SizedBox(height: 12),
@@ -135,7 +122,7 @@ class _SettlementScreenState
               controller: amountController,
               focusNode: _amountFocusNode,
               keyboardType:
-              TextInputType.number,
+              const TextInputType.numberWithOptions(decimal: true),
               labelText: 'المبلغ',
               textInputAction: TextInputAction.done,
               onSubmitted: (_) => _saveSettlement(),
