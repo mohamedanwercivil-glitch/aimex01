@@ -17,7 +17,8 @@ import '../../state/cash_state.dart';
 import '../../models/sale_item.dart';
 
 class SalesReturnScreen extends StatefulWidget {
-  const SalesReturnScreen({super.key});
+  final String? editInvoiceId;
+  const SalesReturnScreen({super.key, this.editInvoiceId});
 
   @override
   State<SalesReturnScreen> createState() => _SalesReturnScreenState();
@@ -36,9 +37,10 @@ class _SalesReturnScreenState extends State<SalesReturnScreen> {
   final _priceFocusNode = FocusNode();
   final _refundAmountFocusNode = FocusNode();
 
-  String refundType = 'خصم من الحساب'; // 'خصم من الحساب' or 'كاش' or 'تحويل'
+  String refundType = 'خصم من الحساب'; 
   String? selectedWallet;
   bool _isSaving = false;
+  String? originalInvoiceNumber;
 
   List<SaleItem> items = [];
   int? editingIndex;
@@ -48,7 +50,57 @@ class _SalesReturnScreenState extends State<SalesReturnScreen> {
   @override
   void initState() {
     super.initState();
-    refundAmountController.text = '0';
+    if (widget.editInvoiceId != null) {
+      _loadInvoiceForEdit(widget.editInvoiceId!);
+    } else {
+      refundAmountController.text = '0';
+    }
+  }
+
+  void _loadInvoiceForEdit(String invoiceId) {
+    final allRecords = DayRecordsStore.getAll();
+    final invoiceRecords = allRecords.where((r) => r['invoiceId'] == invoiceId).toList();
+    
+    if (invoiceRecords.isNotEmpty) {
+      final first = invoiceRecords.first;
+      setState(() {
+        customerController.text = first['customer'] ?? '';
+        refundType = first['refundType'] ?? 'خصم من الحساب';
+        selectedWallet = first['wallet'];
+        refundAmountController.text = (first['refundAmount'] ?? 0).toString();
+        originalInvoiceNumber = first['invoiceNumber']?.toString();
+        
+        items = invoiceRecords.map((e) => SaleItem(
+          name: e['item'],
+          qty: (e['qty'] as num).toDouble(),
+          price: (e['price'] as num).toDouble(),
+        )).toList();
+      });
+    }
+  }
+
+  void _deleteFullInvoicePermanently() {
+    if (widget.editInvoiceId == null) return;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('حذف المرتجع نهائياً؟'),
+        content: const Text('سيتم إلغاء أثر المرتجع بالكامل من المخزن وحساب العميل والخزنة. هل أنت متأكد؟'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
+          TextButton(
+            onPressed: () {
+              DayRecordsStore.reverseInvoiceEffects(widget.editInvoiceId!);
+              Navigator.pop(context); 
+              Navigator.pop(context); 
+              ToastService.show('تم حذف المرتجع وعكس أثره بالكامل');
+            },
+            child: const Text('تأكيد الحذف', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -107,22 +159,23 @@ class _SalesReturnScreenState extends State<SalesReturnScreen> {
     setState(() => _isSaving = true);
 
     try {
-      final refundAmountValue = double.tryParse(refundAmountController.text) ?? 0.0;
+      // 🔥 عكس الأثر القديم أولاً (في حالة التعديل)
+      if (widget.editInvoiceId != null) {
+        DayRecordsStore.reverseInvoiceEffects(widget.editInvoiceId!);
+      }
 
+      final refundAmountValue = double.tryParse(refundAmountController.text) ?? 0.0;
       final previousBalance = CustomerStore.getBalance(customer);
 
-      // تحديث المخزن
       for (final item in items) {
         InventoryStore.returnItem(item.name, item.qty);
       }
 
-      // تحديث حساب العميل
       final netCreditToCustomer = subtotal - refundAmountValue;
       CustomerStore.updateBalance(customer, -netCreditToCustomer);
 
       final newBalance = CustomerStore.getBalance(customer);
 
-      // إذا تم رد مبلغ مالي للعميل (كاش أو تحويل)
       if (refundAmountValue > 0) {
         FinanceService.withdraw(
           amount: refundAmountValue,
@@ -131,7 +184,7 @@ class _SalesReturnScreenState extends State<SalesReturnScreen> {
         );
       }
 
-      final invoiceNumber = DayRecordsStore.getNextInvoiceNumber('sales_return').toString();
+      final invoiceNumber = originalInvoiceNumber ?? DayRecordsStore.getNextInvoiceNumber('sales_return').toString();
       const uuid = Uuid();
       final invoiceId = uuid.v4();
       final now = DateTime.now().toString();
@@ -154,7 +207,7 @@ class _SalesReturnScreenState extends State<SalesReturnScreen> {
         });
       }
 
-      ToastService.show('تم حفظ المرتجع بنجاح');
+      ToastService.show(widget.editInvoiceId != null ? 'تم تعديل المرتجع بنجاح' : 'تم حفظ المرتجع بنجاح');
 
       await _generateAndSharePdf(
         customerName: customer,
@@ -164,19 +217,22 @@ class _SalesReturnScreenState extends State<SalesReturnScreen> {
         newBalance: newBalance,
       );
 
-      setState(() {
-        items.clear();
-        customerController.clear();
-        itemController.clear();
-        qtyController.clear();
-        priceController.clear();
-        refundAmountController.text = '0';
-        refundType = 'خصم من الحساب';
-        selectedWallet = null;
-        editingIndex = null;
-      });
-
-      _customerFocusNode.requestFocus();
+      if (widget.editInvoiceId != null) {
+        Navigator.pop(context);
+      } else {
+        setState(() {
+          items.clear();
+          customerController.clear();
+          itemController.clear();
+          qtyController.clear();
+          priceController.clear();
+          refundAmountController.text = '0';
+          refundType = 'خصم من الحساب';
+          selectedWallet = null;
+          editingIndex = null;
+        });
+        _customerFocusNode.requestFocus();
+      }
     } catch (e) {
       ToastService.show('حدث خطأ أثناء الحفظ');
     } finally {
@@ -221,7 +277,14 @@ class _SalesReturnScreenState extends State<SalesReturnScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('مرتجع مبيعات من عميل'),
+        title: Text(widget.editInvoiceId != null ? 'تعديل مرتجع $originalInvoiceNumber' : 'مرتجع مبيعات من عميل'),
+        actions: [
+          if (widget.editInvoiceId != null)
+             IconButton(
+               icon: const Icon(Icons.delete_forever, color: Colors.red, size: 28),
+               onPressed: _isSaving ? null : _deleteFullInvoicePermanently,
+             ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),

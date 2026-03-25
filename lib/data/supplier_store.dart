@@ -87,6 +87,10 @@ class SupplierStore {
     return _box.keys.map((name) => Supplier(name: name.toString())).toList();
   }
 
+  static List<String> getAllSuppliers() {
+    return _cachedSuppliers;
+  }
+
   static void addSupplier(String name) {
     if (name.trim().isEmpty) return;
     final trimmedName = name.trim();

@@ -13,7 +13,7 @@ class FinanceService {
     required String paymentType,
     String? walletName,
   }) {
-    if (paymentType == 'كاش') {
+    if (paymentType == 'كاش' || paymentType == 'نقدي') {
       CashState.instance.depositCash(amount);
       return FinanceResult(true, 'تم إضافة المبلغ للكاش');
     }
@@ -35,10 +35,13 @@ class FinanceService {
     required double amount,
     required String paymentType,
     String? walletName,
+    bool allowNegative = false, // 🔥 استثناء لعمليات التصحيح (Reverse)
   }) {
-    if (paymentType == 'كاش') {
-      if (CashState.instance.cash < amount) {
-        return FinanceResult(false, 'الرصيد النقدي غير كافي');
+    if (paymentType == 'كاش' || paymentType == 'نقدي') {
+      final currentCash = CashState.instance.cash;
+      if (!allowNegative && currentCash < amount) {
+        return FinanceResult(false, 
+          'عذراً، الرصيد النقدي غير كافي.\nالمطلوب: $amount | المتاح: $currentCash');
       }
 
       CashState.instance.withdrawCash(amount);
@@ -51,8 +54,10 @@ class FinanceService {
         return FinanceResult(false, 'المحفظة غير موجودة');
       }
 
-      if (CashState.instance.wallets[walletName]! < amount) {
-        return FinanceResult(false, 'رصيد المحفظة غير كافي');
+      final currentWalletBalance = CashState.instance.wallets[walletName] ?? 0;
+      if (!allowNegative && currentWalletBalance < amount) {
+        return FinanceResult(false, 
+          'رصيد محفظة ($walletName) غير كافي.\nالمطلوب: $amount | المتاح: $currentWalletBalance');
       }
 
       CashState.instance.withdrawFromWallet(walletName, amount);

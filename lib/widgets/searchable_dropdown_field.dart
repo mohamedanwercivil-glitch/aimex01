@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/arabic_utils.dart';
 
 class SearchableDropdownField extends StatefulWidget {
   final TextEditingController controller;
@@ -39,15 +40,6 @@ class _SearchableDropdownFieldState
     super.initState();
     _focusNode = widget.focusNode ?? FocusNode();
     _focusNode.addListener(_onFocusChange);
-  }
-
-  String _normalizeArabic(String text) {
-    return text
-        .replaceAll(RegExp(r'[أإآ]'), 'ا')
-        .replaceAll('ة', 'ه')
-        .replaceAll('ى', 'ي')
-        .toLowerCase()
-        .trim();
   }
 
   void _onFocusChange() {
@@ -108,12 +100,15 @@ class _SearchableDropdownFieldState
                         return ListTile(
                           title: Text(suggestion),
                           onTap: () {
-                            final selectedValue = suggestion.split('|')[0].trim();
-                            widget.controller.text = selectedValue;
+                            // نرسل القيمة الكاملة (التي تحتوي على السعر/الكمية) ليتم معالجتها في الـ callback
+                            final fullValue = suggestion;
+                            // ولكن نضع في الكنترولر الاسم فقط
+                            final nameOnly = suggestion.split('|')[0].trim();
+                            
+                            widget.controller.text = nameOnly;
                             if (widget.onSelected != null) {
-                              widget.onSelected!(selectedValue);
+                              widget.onSelected!(fullValue);
                             }
-                            // نقوم بإخفاء الـ overlay قبل إلغاء التركيز أو الانتقال
                             _hideOverlay();
                           },
                         );
@@ -137,15 +132,18 @@ class _SearchableDropdownFieldState
     if (!mounted) return;
     
     setState(() {
+      // نجلب النتائج الأصلية من الـ callback الموفر
       final originalResults = widget.onSearch(value);
-      final normalizedQuery = _normalizeArabic(value);
+      final normalizedQuery = ArabicUtils.normalize(value);
 
       if (normalizedQuery.isEmpty) {
         suggestions = [];
         _hideOverlay();
       } else {
+        // نطبق التوحيد (Normalization) على كل نتيجة لضمان دقة البحث
         suggestions = originalResults.where((item) {
-          return _normalizeArabic(item).contains(normalizedQuery);
+          final normalizedItem = ArabicUtils.normalize(item);
+          return normalizedItem.contains(normalizedQuery);
         }).toList();
         
         if (_focusNode.hasFocus) _showOverlay();

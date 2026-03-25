@@ -8,17 +8,38 @@ class InventoryStore {
   static final Box box = Hive.box('inventoryBox');
   static List<Map<String, dynamic>> _cachedItems = [];
 
-  // تحميل البيانات للذاكرة لتسريع البحث
+  // تحميل البيانات للذاكرة لتسريع البحث وحساب المتوسطات
   static void refreshCache() {
-    _cachedItems = box.keys.map((key) {
-      final item = box.get(key);
-      return {
+    final List<Map<String, dynamic>> items = [];
+    for (var key in box.keys) {
+      final rawData = box.get(key);
+      if (rawData == null) continue;
+      
+      final item = Map<String, dynamic>.from(rawData);
+      final List<dynamic> purchases = item['purchases'] ?? [];
+      
+      double totalQty = 0;
+      double totalCost = 0;
+      double lastPrice = (item['lastBuyPrice'] as num?)?.toDouble() ?? 0.0;
+
+      for (var p in purchases) {
+        double q = (p['qty'] as num).toDouble();
+        double pr = (p['price'] as num).toDouble();
+        totalQty += q;
+        totalCost += (q * pr);
+      }
+
+      double avgPrice = totalQty > 0 ? totalCost / totalQty : lastPrice;
+
+      items.add({
         'name': key,
-        'quantity': (item['quantity'] as num?)?.toDouble() ?? 0.0,
-        'lastBuyPrice': (item['lastBuyPrice'] as num?)?.toDouble() ?? 0.0,
+        'quantity': totalQty,
+        'lastBuyPrice': lastPrice,
+        'avgBuyPrice': avgPrice, // 🔥 المتوسط المتحرك بناءً على المتبقي فعلياً
         'createdAt': item['createdAt'],
-      };
-    }).toList();
+      });
+    }
+    _cachedItems = items;
   }
 
   static Future<void> importFromExcel() async {
@@ -52,71 +73,117 @@ class InventoryStore {
 
           final existingItem = box.get(name);
           box.put(name, {
-            'quantity': qty,
-            'totalCost': qty * buyPrice,
+            'purchases': [{'qty': qty, 'price': buyPrice}], // استيراد كشروة أولى
             'lastBuyPrice': buyPrice,
             'createdAt': existingItem != null ? (existingItem['createdAt'] ?? oldDate) : oldDate,
           });
         }
       }
-      refreshCache(); // تحديث الكاش بعد الاستيراد
+      refreshCache();
     }
   }
 
   static void addItem(String name, double qty, double buyPrice) {
-    final item = box.get(name);
+    final rawItem = box.get(name);
     final now = DateTime.now().toIso8601String();
+    
+    Map<String, dynamic> item = rawItem != null ? Map<String, dynamic>.from(rawItem) : {};
+    List<Map<String, dynamic>> purchases = (item['purchases'] as List?)?.map((e) => Map<String, dynamic>.from(e)).toList() ?? [];
 
-    if (item != null) {
-      box.put(name, {
-        'quantity': ((item['quantity'] as num?)?.toDouble() ?? 0.0) + qty,
-        'totalCost': ((item['totalCost'] as num?)?.toDouble() ?? 0.0) + (qty * buyPrice),
-        'lastBuyPrice': buyPrice,
-        'createdAt': item['createdAt'] ?? now,
-      });
-    } else {
-      box.put(name, {
-        'quantity': qty,
-        'totalCost': qty * buyPrice,
-        'lastBuyPrice': buyPrice,
-        'createdAt': now,
-      });
-    }
+    // إضافة شروة جديدة
+    purchases.add({'qty': qty, 'price': buyPrice});
+
+    box.put(name, {
+      'purchases': purchases,
+      'lastBuyPrice': buyPrice,
+      'createdAt': item['createdAt'] ?? now,
+    });
+    
     refreshCache();
   }
 
-  static bool sellItem(String name, double qty) {
-    final item = box.get(name);
-    if (item == null) return false;
-    final currentQty = (item['quantity'] as num?)?.toDouble() ?? 0.0;
-    if (currentQty < qty) return false;
+  static void updateItem(String name, double newQty, double newPrice) {
+    final rawItem = box.get(name);
+    if (rawItem == null) return;
+
+    final now = DateTime.now().toIso8601String();
+    Map<String, dynamic> item = Map<String, dynamic>.from(rawItem);
+    
+    // لتعديل الجرد يدوياً، نعتبر الكمية الحالية هي شروة واحدة بالسعر المحدد
+    List<Map<String, dynamic>> purchases = [{'qty': newQty, 'price': newPrice}];
 
     box.put(name, {
-      'quantity': currentQty - qty,
-      'totalCost': (item['totalCost'] as num?)?.toDouble() ?? 0.0,
-      'lastBuyPrice': (item['lastBuyPrice'] as num?)?.toDouble() ?? 0.0,
+      'purchases': purchases,
+      'lastBuyPrice': newPrice,
+      'createdAt': item['createdAt'] ?? now,
+    });
+    
+    refreshCache();
+  }
+
+  static bool sellItem(String name, double qtyToSell) {
+    final rawItem = box.get(name);
+    if (rawItem == null) return false;
+
+    Map<String, dynamic> item = Map<String, dynamic>.from(rawItem);
+    List<Map<String, dynamic>> purchases = (item['purchases'] as List?)?.map((e) => Map<String, dynamic>.from(e)).toList() ?? [];
+
+    double totalAvailable = purchases.fold(0, (sum, p) => sum + (p['qty'] as num).toDouble());
+    if (totalAvailable < qtyToSell) return false;
+
+    // 🔥 تطبيق منطق FIFO: الخصم من أقدم المشتريات
+    double remainingToSell = qtyToSell;
+    while (remainingToSell > 0 && purchases.isNotEmpty) {
+      double oldestQty = (purchases[0]['qty'] as num).toDouble();
+      
+      if (oldestQty <= remainingToSell) {
+        remainingToSell -= oldestQty;
+        purchases.removeAt(0); // خلصنا الشروة القديمة بالكامل
+      } else {
+        purchases[0]['qty'] = oldestQty - remainingToSell;
+        remainingToSell = 0; // خلصنا الكمية المطلوبة للبيع
+      }
+    }
+
+    box.put(name, {
+      'purchases': purchases,
+      'lastBuyPrice': item['lastBuyPrice'],
       'createdAt': item['createdAt'],
     });
+
     refreshCache();
     return true;
   }
 
   static void returnItem(String name, double qty) {
-    final item = box.get(name);
-    if (item == null) {
+    final rawItem = box.get(name);
+    if (rawItem == null) {
       addItem(name, qty, 0);
       return;
     }
+
+    Map<String, dynamic> item = Map<String, dynamic>.from(rawItem);
+    List<Map<String, dynamic>> purchases = (item['purchases'] as List?)?.map((e) => Map<String, dynamic>.from(e)).toList() ?? [];
+
+    // المرتجع يضاف كشروة جديدة (أو يضاف لأخر شروة) - يفضل كشروة جديدة بسعر آخر شراء لضمان دقة المتوسط
+    purchases.add({'qty': qty, 'price': item['lastBuyPrice'] ?? 0.0});
+
     box.put(name, {
-      'quantity': ((item['quantity'] as num?)?.toDouble() ?? 0.0) + qty,
-      'totalCost': (item['totalCost'] as num?)?.toDouble() ?? 0.0,
-      'lastBuyPrice': (item['lastBuyPrice'] as num?)?.toDouble() ?? 0.0,
+      'purchases': purchases,
+      'lastBuyPrice': item['lastBuyPrice'],
       'createdAt': item['createdAt'],
     });
+    
     refreshCache();
   }
 
-  static double getItemQty(String name) => (box.get(name)?['quantity'] as num?)?.toDouble() ?? 0.0;
+  static double getItemQty(String name) {
+    final rawItem = box.get(name);
+    if (rawItem == null) return 0.0;
+    final List purchases = rawItem['purchases'] ?? [];
+    return purchases.fold(0.0, (sum, p) => sum + (p['qty'] as num).toDouble());
+  }
+
   static double getItemBuyPrice(String name) => (box.get(name)?['lastBuyPrice'] as num?)?.toDouble() ?? 0.0;
 
   static List<Map<String, dynamic>> getAllItems() {

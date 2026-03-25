@@ -21,10 +21,15 @@ class DraftStore {
       'wallet': wallet,
       'discount': discount,
       'paidAmount': paidAmount,
-      'items': items.map((e) => {
-        'name': e.name,
-        'qty': e.qty,
-        'price': e.price,
+      'items': items.map((e) {
+        // e might be a SaleItem or a Map depending on where it's called from
+        if (e is Map) return e;
+        return {
+          'name': e.name,
+          'qty': e.qty,
+          'price': e.price,
+          'isReturn': e.isReturn,
+        };
       }).toList(),
     });
   }
@@ -56,10 +61,14 @@ class DraftStore {
       'wallet': wallet,
       'discount': discount,
       'paidAmount': paidAmount,
-      'items': items.map((e) => {
-        'name': e.name,
-        'qty': e.qty,
-        'price': e.price,
+      'items': items.map((e) {
+        if (e is Map) return e;
+        return {
+          'name': e.name,
+          'qty': e.qty,
+          'price': e.price,
+          'isReturn': e.isReturn,
+        };
       }).toList(),
     });
   }

@@ -24,9 +24,28 @@ class PdfService {
     final ttf = pw.Font.ttf(fontData);
     
     pw.MemoryImage? logo;
+    pw.MemoryImage? vodafoneLogo;
+    pw.MemoryImage? instapayLogo;
+    pw.MemoryImage? whatsappLogo;
+
     try {
       final logoData = await rootBundle.load("assets/icon/AIMEX.png");
       logo = pw.MemoryImage(logoData.buffer.asUint8List());
+    } catch (_) {}
+
+    try {
+      final vData = await rootBundle.load("assets/icon/vodafone_logo.png");
+      vodafoneLogo = pw.MemoryImage(vData.buffer.asUint8List());
+    } catch (_) {}
+
+    try {
+      final iData = await rootBundle.load("assets/icon/instapay_logo.png");
+      instapayLogo = pw.MemoryImage(iData.buffer.asUint8List());
+    } catch (_) {}
+
+    try {
+      final wData = await rootBundle.load("assets/icon/whatsapp_logo.png");
+      whatsappLogo = pw.MemoryImage(wData.buffer.asUint8List());
     } catch (_) {}
 
     final title = isPurchase ? 'فاتورة شراء' : (invoiceId.startsWith('R-') ? 'مرتجع مبيعات' : 'فاتورة بيع');
@@ -60,6 +79,15 @@ class PdfService {
                         children: [
                           pw.Text('عمر انور', style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold, font: ttf, color: PdfColors.blue900)),
                           pw.Text('للتجارة والتوريدات العامة', style: pw.TextStyle(fontSize: 10, font: ttf, color: PdfColors.grey700)),
+                          pw.SizedBox(height: 2),
+                          // أرقام التواصل (واتساب) في الهيدر
+                          pw.Row(
+                            children: [
+                              _buildLogoContactRow(whatsappLogo, '01062350317', ttf, PdfColors.blue700, size: 12),
+                              pw.SizedBox(width: 10),
+                              _buildLogoContactRow(whatsappLogo, '0150854570', ttf, PdfColors.blue700, size: 12),
+                            ],
+                          ),
                         ],
                       ),
                     ],
@@ -77,17 +105,7 @@ class PdfService {
               pw.SizedBox(height: 10),
               pw.Divider(thickness: 2, color: PdfColors.blue900),
               pw.SizedBox(height: 5),
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.center,
-                children: [
-                  pw.Text('InstaPay: 01507276172', style: pw.TextStyle(fontSize: 9, font: ttf, fontWeight: pw.FontWeight.bold)),
-                  pw.SizedBox(width: 15),
-                  pw.Text('Vodafone: 01016754232', style: pw.TextStyle(fontSize: 9, font: ttf, fontWeight: pw.FontWeight.bold)),
-                  pw.SizedBox(width: 15),
-                  pw.Text('Vodafone: 01062350317', style: pw.TextStyle(fontSize: 9, font: ttf, fontWeight: pw.FontWeight.bold)),
-                ],
-              ),
-              pw.SizedBox(height: 10),
+              
               pw.Row(
                 children: [
                   pw.Text('$partyLabel: ', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, font: ttf)),
@@ -105,7 +123,7 @@ class PdfService {
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Text('شركة عمر انور للتوريدات', style: pw.TextStyle(font: ttf, fontSize: 8, color: PdfColors.grey500)),
+                  pw.Text('شركة الريان', style: pw.TextStyle(font: ttf, fontSize: 8, color: PdfColors.grey500)),
                   pw.Text('صفحة ${context.pageNumber} من ${context.pagesCount}', style: pw.TextStyle(font: ttf, fontSize: 9)),
                 ],
               ),
@@ -162,11 +180,52 @@ class PdfService {
               ],
             ),
           ),
+
+          pw.SizedBox(height: 30),
+          // قسم أرقام المحافظ في آخر الفاتورة
+          pw.Container(
+            padding: const pw.EdgeInsets.symmetric(vertical: 8, horizontal: 15),
+            decoration: pw.BoxDecoration(
+              color: PdfColors.grey100,
+              borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
+              border: pw.Border.all(color: PdfColors.grey300, width: 1),
+            ),
+            child: pw.Column(
+              children: [
+                pw.Text('طرق الدفع المتاحة:', style: pw.TextStyle(font: ttf, fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.blueGrey900)),
+                pw.SizedBox(height: 8),
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.center,
+                  children: [
+                    _buildLogoContactRow(instapayLogo, '01507276172', ttf, PdfColors.purple800, size: 11),
+                    pw.SizedBox(width: 40),
+                    _buildLogoContactRow(vodafoneLogo, '01016754232', ttf, PdfColors.red800, size: 11),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
 
     return pdf.save();
+  }
+
+  static pw.Widget _buildLogoContactRow(pw.MemoryImage? image, String value, pw.Font font, PdfColor color, {double size = 10}) {
+    return pw.Row(
+      mainAxisSize: pw.MainAxisSize.min,
+      children: [
+        if (image != null) 
+          pw.Container(
+            width: size + 8,
+            height: size + 8,
+            margin: const pw.EdgeInsets.only(left: 5),
+            child: pw.Image(image),
+          ),
+        pw.Text(value, style: pw.TextStyle(fontSize: size, font: font, fontWeight: pw.FontWeight.bold, color: color)),
+      ],
+    );
   }
 
   static pw.Widget _buildBalanceRow(String label, double amount, pw.Font font, {bool isTotal = false}) {

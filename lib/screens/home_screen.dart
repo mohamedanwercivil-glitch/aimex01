@@ -15,6 +15,7 @@ import 'settlement_screen.dart';
 import 'supplier_settlement_screen.dart';
 import 'settings/import_screen.dart';
 import 'account_statement_screen.dart';
+import '../services/logger_service.dart'; // 🔥 استيراد اللوجر
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -100,8 +101,32 @@ class HomeScreen extends StatelessWidget {
                       if (dayStarted)
                         _buildFullWidthButton(context, 'إنهاء اليوم', Icons.done_all, Colors.red.shade700, const EndDayScreen()),
                       const SizedBox(height: 12),
-                      // زر استيراد
-                      _buildFullWidthButton(context, 'استيراد من اكسل', Icons.file_upload, Colors.grey.shade700, const ImportScreen()),
+                      
+                      // أزرار التحكم الإضافية
+                      Row(
+                        children: [
+                           Expanded(
+                             child: _buildActionButton(
+                               context, 
+                               'استيراد', 
+                               Icons.file_upload, 
+                               Colors.grey.shade700, 
+                               const ImportScreen(),
+                             ),
+                           ),
+                           const SizedBox(width: 12),
+                           Expanded(
+                             child: _buildActionButton(
+                               context, 
+                               'إرسال سجل الأخطاء', 
+                               Icons.bug_report, 
+                               Colors.red.shade900, 
+                               null,
+                               onTap: () => LoggerService.shareLogFile(),
+                             ),
+                           ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -159,6 +184,26 @@ class HomeScreen extends StatelessWidget {
             : null,
         icon: Icon(icon, size: 28),
         label: Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
+
+  Widget _buildActionButton(BuildContext context, String title, IconData icon, Color color, Widget? screen, {VoidCallback? onTap}) {
+    return SizedBox(
+      height: 50,
+      child: ElevatedButton.icon(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+        onPressed: onTap ?? () {
+          if (screen != null) {
+            Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
+          }
+        },
+        icon: Icon(icon, size: 20),
+        label: Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
       ),
     );
   }

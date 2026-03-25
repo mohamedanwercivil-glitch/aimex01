@@ -3,39 +3,31 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 class CashState extends ChangeNotifier {
   static final CashState instance = CashState._internal();
-  CashState._internal();
+  CashState._internal() {
+    _loadFromStorage();
+  }
 
   static const String _boxName = 'dayBox';
-
   Box get _box => Hive.box(_boxName);
-
-  bool _initialized = false;
 
   double cash = 0;
   double startOfDayCash = 0;
 
-  final Map<String, double> wallets = {
+  Map<String, double> wallets = {
     'فودافون محمد 32': 0,
     'فودافون محمد 57': 0,
     'وي محمد': 0,
     'فودافون عمر': 0,
-    'انستا محمد 015': 0, // <--- المحفظة الجديدة
+    'انستا محمد 015': 0,
   };
-  final Map<String, double> startOfDayWallets = {};
+  Map<String, double> startOfDayWallets = {};
 
+  void _loadFromStorage() {
+    cash = (_box.get('cash', defaultValue: 0.0) as num).toDouble();
+    startOfDayCash = (_box.get('startOfDayCash', defaultValue: 0.0) as num).toDouble();
 
-  // ======================
-  // يشتغل تلقائي أول استخدام فقط
-  // ======================
-  void _ensureInit() {
-    if (_initialized) return;
-
-    cash = (_box.get('cash', defaultValue: 0) as num).toDouble();
-
-    final savedWallets =
-    _box.get('wallets', defaultValue: <String, dynamic>{});
-
-    if (savedWallets is Map) {
+    final savedWallets = _box.get('wallets');
+    if (savedWallets != null && savedWallets is Map) {
       savedWallets.forEach((key, value) {
         if (wallets.containsKey(key)) {
           wallets[key] = (value as num).toDouble();
@@ -43,22 +35,27 @@ class CashState extends ChangeNotifier {
       });
     }
 
-    _initialized = true;
+    final savedStartWallets = _box.get('startOfDayWallets');
+    if (savedStartWallets != null && savedStartWallets is Map) {
+      savedStartWallets.forEach((key, value) {
+        startOfDayWallets[key.toString()] = (value as num).toDouble();
+      });
+    }
+    notifyListeners();
   }
 
   void _save() {
     _box.put('cash', cash);
+    _box.put('startOfDayCash', startOfDayCash);
     _box.put('wallets', wallets);
+    _box.put('startOfDayWallets', startOfDayWallets);
   }
 
   List<String> get allBoxes {
-    _ensureInit();
     return ['نقدي', ...wallets.keys];
   }
 
   double get totalMoney {
-    _ensureInit();
-
     double total = cash;
     for (var value in wallets.values) {
       total += value;
@@ -70,11 +67,11 @@ class CashState extends ChangeNotifier {
     required double startCash,
     required Map<String, double> startWallets,
   }) {
-    _ensureInit();
-
     cash = startCash;
     startOfDayCash = startCash;
-
+    
+    // تصفير البدايات القديمة
+    startOfDayWallets.clear();
     wallets.updateAll((key, value) => 0);
 
     startWallets.forEach((key, value) {
@@ -83,32 +80,23 @@ class CashState extends ChangeNotifier {
         startOfDayWallets[key] = value;
       }
     });
-
     _save();
     notifyListeners();
   }
 
   void depositCash(double amount) {
-    _ensureInit();
-
     cash += amount;
     _save();
     notifyListeners();
   }
 
   void withdrawCash(double amount) {
-    _ensureInit();
-
-    if (cash >= amount) {
-      cash -= amount;
-      _save();
-      notifyListeners();
-    }
+    cash -= amount;
+    _save();
+    notifyListeners();
   }
 
   void depositToWallet(String wallet, double amount) {
-    _ensureInit();
-
     if (wallets.containsKey(wallet)) {
       wallets[wallet] = wallets[wallet]! + amount;
       _save();
@@ -117,10 +105,7 @@ class CashState extends ChangeNotifier {
   }
 
   void withdrawFromWallet(String wallet, double amount) {
-    _ensureInit();
-
-    if (wallets.containsKey(wallet) &&
-        wallets[wallet]! >= amount) {
+    if (wallets.containsKey(wallet)) {
       wallets[wallet] = wallets[wallet]! - amount;
       _save();
       notifyListeners();
@@ -132,26 +117,23 @@ class CashState extends ChangeNotifier {
     required String to,
     required double amount,
   }) {
-    _ensureInit();
-
     if (from == to) return false;
     if (amount <= 0) return false;
-
-    double fromBalance =
-    from == 'نقدي' ? cash : wallets[from] ?? 0;
-
-    if (fromBalance < amount) return false;
 
     if (from == 'نقدي') {
       cash -= amount;
     } else {
-      wallets[from] = wallets[from]! - amount;
+      if (wallets.containsKey(from)) {
+        wallets[from] = wallets[from]! - amount;
+      }
     }
 
     if (to == 'نقدي') {
       cash += amount;
     } else {
-      wallets[to] = wallets[to]! + amount;
+      if (wallets.containsKey(to)) {
+        wallets[to] = wallets[to]! + amount;
+      }
     }
 
     _save();

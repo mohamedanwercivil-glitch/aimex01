@@ -6,11 +6,15 @@ import 'data/customer_store.dart';
 import 'screens/home_screen.dart';
 import 'services/background_service.dart';
 import 'services/notification_service.dart';
+import 'services/logger_service.dart'; // 🔥 استيراد اللوجر
 import 'state/day_state.dart';
 import 'state/cash_state.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Logger first
+  await LoggerService.init();
 
   // Initialize services
   await NotificationService.initialize(); 
