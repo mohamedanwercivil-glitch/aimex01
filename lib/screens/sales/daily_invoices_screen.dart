@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../data/day_records_store.dart';
@@ -72,11 +73,13 @@ class _DailyInvoicesScreenState extends State<DailyInvoicesScreen> {
         newBalance: CustomerStore.getBalance(customerName),
       );
 
+      final dateStr = DateFormat('d-M-yyyy').format(DateTime.parse(first['time'] ?? DateTime.now().toString()));
+      final fileName = '$customerName $dateStr.pdf';
       final tempDir = await getTemporaryDirectory();
-      final file = File('${tempDir.path}/فاتورة_$invoiceNumber.pdf');
+      final file = File('${tempDir.path}/$fileName');
       await file.writeAsBytes(pdfData);
 
-      await Share.shareXFiles([XFile(file.path)], text: 'فاتورة بيع رقم $invoiceNumber');
+      await Share.shareXFiles([XFile(file.path)], text: 'فاتورة بيع - $customerName');
     } catch (e) {
       ToastService.show('حدث خطأ أثناء توليد الفاتورة');
     } finally {

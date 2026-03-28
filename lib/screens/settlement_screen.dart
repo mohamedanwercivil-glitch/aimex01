@@ -1,12 +1,16 @@
+import 'dart:io';
 import 'package:aimex/widgets/selectable_text_field.dart';
 import 'package:aimex/widgets/searchable_dropdown_field.dart';
 import 'package:aimex/services/toast_service.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../state/day_state.dart';
 import '../state/cash_state.dart';
 import '../services/finance_service.dart';
+import '../services/pdf_service.dart';
 import '../data/day_records_store.dart';
 import '../data/customer_store.dart';
 
@@ -81,6 +85,34 @@ class _SettlementScreenState
     super.dispose();
   }
 
+  Future<void> _generateAndShareSettlement(String customerName, double amount) async {
+    try {
+      final pdfData = await PdfService.generateInvoice(
+        customerName: customerName,
+        items: [],
+        subtotal: 0,
+        discount: 0,
+        total: 0,
+        paidAmount: amount,
+        dueAmount: 0,
+        invoiceId: 'S-',
+        previousBalance: CustomerStore.getBalance(customerName) + amount,
+        newBalance: CustomerStore.getBalance(customerName),
+        isSettlement: true,
+      );
+
+      final dateStr = DateFormat('d-M-yyyy').format(DateTime.now());
+      final fileName = '$customerName $dateStr.pdf';
+      final tempDir = await getTemporaryDirectory();
+      final file = File('${tempDir.path}/$fileName');
+      await file.writeAsBytes(pdfData);
+
+      await Share.shareXFiles([XFile(file.path)], text: 'إيصال سداد - $customerName');
+    } catch (e) {
+      ToastService.show('حدث خطأ أثناء مشاركة الإيصال');
+    }
+  }
+
   Future<void> _saveSettlement() async {
     if (!DayState.instance.dayStarted) {
       ToastService.show('يجب بدء اليوم أولاً');
@@ -98,14 +130,11 @@ class _SettlementScreenState
     setState(() => _isSaving = true);
 
     try {
-      // 1. 🔥 عكس الأثر القديم ومسحه تماماً من الحسابات والخزنة
       if (widget.editSettlementId != null) {
         DayRecordsStore.reverseInvoiceEffects(widget.editSettlementId!);
-        // انتظار بسيط للتأكد من تحديث الـ CashState في الذاكرة
         await Future.delayed(const Duration(milliseconds: 100));
       }
 
-      // 2. تسجيل العملية الجديدة كأنها لسه حاصلة
       final result = FinanceService.deposit(
         amount: amount,
         paymentType: paymentType,
@@ -133,6 +162,8 @@ class _SettlementScreenState
         'wallet': paymentType == 'تحويل' ? selectedWallet ?? '' : 'نقدي',
         'date': DateTime.now().toString(),
       });
+
+      await _generateAndShareSettlement(customer, amount);
 
       ToastService.show(widget.editSettlementId != null ? 'تم تعديل التحصيل بنجاح' : 'تم تسجيل التحصيل وتحديث حساب العميل');
 
@@ -232,7 +263,8 @@ class _SettlementScreenState
               itemCount: todaySettlements.length,
               itemBuilder: (context, index) {
                 final settlement = todaySettlements[index];
-                final time = DateFormat('hh:mm a').format(DateTime.parse(settlement['date'] ?? settlement['time']));
+                final dateValue = settlement['date'] ?? settlement['time'];
+                final time = dateValue != null ? DateFormat('hh:mm a').format(DateTime.parse(dateValue)) : '';
                 final bool isBeingEdited = widget.editSettlementId != null && 
                     (settlement['id'] == widget.editSettlementId || settlement['invoiceId'] == widget.editSettlementId);
 
@@ -246,6 +278,10 @@ class _SettlementScreenState
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        IconButton(
+                          icon: const Icon(Icons.share, color: Colors.teal, size: 20),
+                          onPressed: () => _generateAndShareSettlement(settlement['customer'], (settlement['amount'] as num).toDouble()),
+                        ),
                         if (!isBeingEdited)
                           IconButton(
                             icon: const Icon(Icons.edit, color: Colors.blue, size: 20),

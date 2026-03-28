@@ -35,6 +35,9 @@ dependencies:
   # Date Formatting
   intl: ^0.19.0
 
+  # Arabic Reshaping for PDF
+  arabic_reshaper: ^0.0.1
+
   # Notifications
   fluttertoast: ^8.2.4
   flutter_local_notifications: ^20.1.0

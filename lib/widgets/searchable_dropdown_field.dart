@@ -10,6 +10,7 @@ class SearchableDropdownField extends StatefulWidget {
   final ValueChanged<String>? onSelected;
   final TextInputAction? textInputAction;
   final ValueChanged<String>? onSubmitted;
+  final TextDirection? textDirection;
 
   const SearchableDropdownField({
     super.key,
@@ -21,6 +22,7 @@ class SearchableDropdownField extends StatefulWidget {
     this.onSelected,
     this.textInputAction,
     this.onSubmitted,
+    this.textDirection,
   });
 
   @override
@@ -98,16 +100,12 @@ class _SearchableDropdownFieldState
                       itemBuilder: (context, index) {
                         final suggestion = suggestions[index];
                         return ListTile(
-                          title: Text(suggestion),
+                          title: Text(suggestion, textDirection: widget.textDirection),
                           onTap: () {
-                            // نرسل القيمة الكاملة (التي تحتوي على السعر/الكمية) ليتم معالجتها في الـ callback
-                            final fullValue = suggestion;
-                            // ولكن نضع في الكنترولر الاسم فقط
                             final nameOnly = suggestion.split('|')[0].trim();
-                            
                             widget.controller.text = nameOnly;
                             if (widget.onSelected != null) {
-                              widget.onSelected!(fullValue);
+                              widget.onSelected!(suggestion);
                             }
                             _hideOverlay();
                           },
@@ -132,7 +130,6 @@ class _SearchableDropdownFieldState
     if (!mounted) return;
     
     setState(() {
-      // نجلب النتائج الأصلية من الـ callback الموفر
       final originalResults = widget.onSearch(value);
       final normalizedQuery = ArabicUtils.normalize(value);
 
@@ -140,7 +137,6 @@ class _SearchableDropdownFieldState
         suggestions = [];
         _hideOverlay();
       } else {
-        // نطبق التوحيد (Normalization) على كل نتيجة لضمان دقة البحث
         suggestions = originalResults.where((item) {
           final normalizedItem = ArabicUtils.normalize(item);
           return normalizedItem.contains(normalizedQuery);
@@ -160,6 +156,7 @@ class _SearchableDropdownFieldState
         enabled: widget.enabled,
         controller: widget.controller,
         focusNode: _focusNode,
+        textDirection: widget.textDirection,
         decoration: InputDecoration(
           labelText: widget.label,
           border: const OutlineInputBorder(),

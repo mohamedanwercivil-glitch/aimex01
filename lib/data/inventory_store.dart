@@ -3,6 +3,7 @@ import 'package:excel/excel.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
+import '../utils/arabic_utils.dart';
 
 class InventoryStore {
   static final Box box = Hive.box('inventoryBox');
@@ -204,11 +205,14 @@ class InventoryStore {
     }).toList();
   }
 
-  static List<Map<String, dynamic>> searchAvailableItems(String query) {
-    final lowerQuery = query.toLowerCase();
-    return getAllItems().where((item) => 
-      item['name'].toString().toLowerCase().contains(lowerQuery) &&
-      (item['quantity'] as double) > 0
-    ).toList();
+  static List<String> searchAvailableItemNames(String query) {
+    final normalizedQuery = ArabicUtils.normalize(query);
+    return getAllItems()
+        .where((item) => 
+          ArabicUtils.normalize(item['name'].toString()).contains(normalizedQuery) &&
+          (item['quantity'] as double) > 0
+        )
+        .map((item) => item['name'].toString())
+        .toList();
   }
 }

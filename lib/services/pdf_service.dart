@@ -2,9 +2,21 @@ import 'dart:typed_data';
 import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import '../models/sale_item.dart'; 
+import 'package:arabic_reshaper/arabic_reshaper.dart';
+import '../models/sale_item.dart';
 
 class PdfService {
+  // دالة لإعادة تشكيل النص العربي لربط الحروف ببعضها
+  // تم إزالة العكس اليدوي لأن اتجاه النص RTL يقوم بذلك تلقائياً
+  static String _shape(String text) {
+    if (text.isEmpty) return text;
+    try {
+      return ArabicReshaper().reshape(text);
+    } catch (e) {
+      return text;
+    }
+  }
+
   static Future<Uint8List> generateInvoice({
     required String customerName,
     required List<SaleItem> items,
@@ -17,6 +29,7 @@ class PdfService {
     required double previousBalance,
     required double newBalance,
     bool isPurchase = false,
+    bool isSettlement = false,
   }) async {
     final pdf = pw.Document();
 
@@ -48,8 +61,17 @@ class PdfService {
       whatsappLogo = pw.MemoryImage(wData.buffer.asUint8List());
     } catch (_) {}
 
-    final title = isPurchase ? 'فاتورة شراء' : (invoiceId.startsWith('R-') ? 'مرتجع مبيعات' : 'فاتورة بيع');
-    final partyLabel = isPurchase ? 'المورد' : 'العميل';
+    String titleText = 'فاتورة بيع';
+    if (isSettlement) {
+      titleText = 'إيصال سداد';
+    } else if (isPurchase) {
+      titleText = 'فاتورة شراء';
+    } else if (invoiceId.startsWith('R-')) {
+      titleText = 'مرتجع مبيعات';
+    }
+    
+    final title = _shape(titleText);
+    final partyLabel = _shape(isPurchase ? 'المورد' : 'العميل');
 
     pdf.addPage(
       pw.MultiPage( 
@@ -67,7 +89,7 @@ class PdfService {
                 children: [
                   pw.Row(
                     children: [
-                      if (logo != null) 
+                      if (logo != null)
                         pw.Container(
                           width: 50,
                           height: 50,
@@ -77,10 +99,9 @@ class PdfService {
                       pw.Column(
                         crossAxisAlignment: pw.CrossAxisAlignment.start,
                         children: [
-                          pw.Text('عمر انور', style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold, font: ttf, color: PdfColors.blue900)),
-                          pw.Text('للتجارة والتوريدات العامة', style: pw.TextStyle(fontSize: 10, font: ttf, color: PdfColors.grey700)),
+                          pw.Text(_shape('عمر انور'), style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold, font: ttf, color: PdfColors.blue900)),
+                          pw.Text(_shape('للتجارة والتوريدات العامة'), style: pw.TextStyle(fontSize: 10, font: ttf, color: PdfColors.grey700)),
                           pw.SizedBox(height: 2),
-                          // أرقام التواصل (واتساب) في الهيدر
                           pw.Row(
                             children: [
                               _buildLogoContactRow(whatsappLogo, '01062350317', ttf, PdfColors.blue700, size: 12),
@@ -96,8 +117,7 @@ class PdfService {
                     crossAxisAlignment: pw.CrossAxisAlignment.end,
                     children: [
                       pw.Text(title, style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold, font: ttf)),
-                      pw.Text('الرقم: $invoiceId', style: pw.TextStyle(font: ttf, fontWeight: pw.FontWeight.bold)),
-                      pw.Text('التاريخ: ${DateTime.now().toLocal().toString().split(' ')[0]}', style: pw.TextStyle(font: ttf, fontSize: 10)),
+                      pw.Text('${_shape('التاريخ')}: ${DateTime.now().toLocal().toString().split(' ')[0]}', style: pw.TextStyle(font: ttf, fontSize: 10)),
                     ],
                   ),
                 ],
@@ -109,7 +129,7 @@ class PdfService {
               pw.Row(
                 children: [
                   pw.Text('$partyLabel: ', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, font: ttf)),
-                  pw.Text(customerName, style: pw.TextStyle(fontSize: 14, font: ttf)),
+                  pw.Text(_shape(customerName), style: pw.TextStyle(fontSize: 14, font: ttf)),
                 ],
               ),
               pw.SizedBox(height: 10),
@@ -123,15 +143,15 @@ class PdfService {
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Text('شركة الريان', style: pw.TextStyle(font: ttf, fontSize: 8, color: PdfColors.grey500)),
-                  pw.Text('صفحة ${context.pageNumber} من ${context.pagesCount}', style: pw.TextStyle(font: ttf, fontSize: 9)),
+                  pw.Text(_shape('شركة الريان'), style: pw.TextStyle(font: ttf, fontSize: 8, color: PdfColors.grey500)),
+                  pw.Text('${_shape('صفحة')} ${context.pageNumber} ${_shape('من')} ${context.pagesCount}', style: pw.TextStyle(font: ttf, fontSize: 9)),
                 ],
               ),
             ],
           );
         },
         build: (pw.Context context) => [
-          _buildItemsTable(items, ttf),
+          if (!isSettlement) _buildItemsTable(items, ttf),
           
           pw.SizedBox(height: 20),
           
@@ -151,18 +171,19 @@ class PdfService {
                   child: pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
-                      pw.Text('ملخص الحساب الشخصي:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11, font: ttf, color: PdfColors.blue900)),
+                      pw.Text(_shape('ملخص الحساب الشخصي:'), style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11, font: ttf, color: PdfColors.blue900)),
                       pw.SizedBox(height: 8),
-                      _buildBalanceRow('الرصيد السابق:', previousBalance, ttf),
-                      _buildBalanceRow(invoiceId.startsWith('R-') ? 'إجمالي المرتجع:' : 'إجمالي الفاتورة:', total, ttf),
-                      _buildBalanceRow(invoiceId.startsWith('R-') ? 'المبلغ المردود:' : 'المبلغ المدفوع:', paidAmount, ttf),
+                      _buildBalanceRow(_shape('الرصيد السابق:'), previousBalance, ttf),
+                      if (!isSettlement) _buildBalanceRow(invoiceId.startsWith('R-') ? _shape('إجمالي المرتجع:') : _shape('إجمالي الفاتورة:'), total, ttf),
+                      _buildBalanceRow(isSettlement ? _shape('المبلغ المسدد:') : (invoiceId.startsWith('R-') ? _shape('المبلغ المردود:') : _shape('المبلغ المدفوع:')), paidAmount, ttf),
                       pw.Divider(color: PdfColors.grey300),
-                      _buildBalanceRow('الرصيد الحالي:', newBalance, ttf, isTotal: true),
+                      _buildBalanceRow(_shape('الرصيد الحالي:'), newBalance, ttf, isTotal: true),
                     ],
                   ),
                 ),
               ),
-              if (!isPurchase) pw.SizedBox(width: 40),
+              if (!isPurchase && !isSettlement) pw.SizedBox(width: 40),
+              if (!isPurchase && !isSettlement)
               pw.Expanded(
                 flex: 1,
                 child: _buildTotals(subtotal, discount, total, paidAmount, dueAmount, ttf, invoiceId.startsWith('R-') || isPurchase),
@@ -174,15 +195,14 @@ class PdfService {
           pw.Center(
             child: pw.Column(
               children: [
-                pw.Text('شكرًا لتعاملكم معنا', style: pw.TextStyle(font: ttf, fontSize: 14, fontWeight: pw.FontWeight.bold)),
+                pw.Text(_shape('شكرًا لتعاملكم معنا'), style: pw.TextStyle(font: ttf, fontSize: 14, fontWeight: pw.FontWeight.bold)),
                 pw.SizedBox(height: 5),
-                pw.Text('عمر انور - للتجارة والتوريدات العامة', style: pw.TextStyle(font: ttf, fontSize: 10, color: PdfColors.grey700)),
+                pw.Text(_shape('عمر انور - للتجارة والتوريدات العامة'), style: pw.TextStyle(font: ttf, fontSize: 10, color: PdfColors.grey700)),
               ],
             ),
           ),
 
           pw.SizedBox(height: 30),
-          // قسم أرقام المحافظ في آخر الفاتورة
           pw.Container(
             padding: const pw.EdgeInsets.symmetric(vertical: 8, horizontal: 15),
             decoration: pw.BoxDecoration(
@@ -192,7 +212,7 @@ class PdfService {
             ),
             child: pw.Column(
               children: [
-                pw.Text('طرق الدفع المتاحة:', style: pw.TextStyle(font: ttf, fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.blueGrey900)),
+                pw.Text(_shape('طرق الدفع المتاحة:'), style: pw.TextStyle(font: ttf, fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.blueGrey900)),
                 pw.SizedBox(height: 8),
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.center,
@@ -216,7 +236,7 @@ class PdfService {
     return pw.Row(
       mainAxisSize: pw.MainAxisSize.min,
       children: [
-        if (image != null) 
+        if (image != null)
           pw.Container(
             width: size + 8,
             height: size + 8,
@@ -229,14 +249,14 @@ class PdfService {
   }
 
   static pw.Widget _buildBalanceRow(String label, double amount, pw.Font font, {bool isTotal = false}) {
-    String status = amount > 0 ? '(عليه)' : (amount < 0 ? '(له)' : '');
+    String status = amount > 0 ? _shape('(عليه)') : (amount < 0 ? _shape('(له)') : '');
     return pw.Padding(
       padding: const pw.EdgeInsets.symmetric(vertical: 2),
       child: pw.Row(
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
           pw.Text(label, style: pw.TextStyle(font: font, fontSize: isTotal ? 10 : 9)),
-          pw.Text('${amount.abs().toStringAsFixed(2)} $status', 
+          pw.Text('${amount.abs().toStringAsFixed(2)} $status',
             style: pw.TextStyle(font: font, fontSize: isTotal ? 10 : 9, fontWeight: isTotal ? pw.FontWeight.bold : null,
             color: amount > 0 ? PdfColors.red : PdfColors.green)),
         ],
@@ -245,13 +265,13 @@ class PdfService {
   }
 
   static pw.Widget _buildItemsTable(List<SaleItem> items, pw.Font font) {
-    const tableHeaders = ['الصنف', 'الكمية', 'السعر', 'الإجمالي'];
+    final tableHeaders = [_shape('الصنف'), _shape('الكمية'), _shape('السعر'), _shape('الإجمالي')];
 
     return pw.TableHelper.fromTextArray(
       headers: tableHeaders,
       data: items.map((item) {
         return [
-          item.name,
+          _shape(item.name),
           item.qty.toStringAsFixed(2),
           item.price.toStringAsFixed(2),
           item.total.toStringAsFixed(2),
@@ -288,7 +308,7 @@ class PdfService {
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
-            pw.Text('الإجمالي:', style: pw.TextStyle(font: font, fontSize: 10)),
+            pw.Text(_shape('الإجمالي:'), style: pw.TextStyle(font: font, fontSize: 10)),
             pw.Text(subtotal.toStringAsFixed(2), style: pw.TextStyle(font: font, fontSize: 10)),
           ],
         ),
@@ -296,7 +316,7 @@ class PdfService {
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
-            pw.Text('الخصم:', style: pw.TextStyle(font: font, fontSize: 10)),
+            pw.Text(_shape('الخصم:'), style: pw.TextStyle(font: font, fontSize: 10)),
             pw.Text(discount.toStringAsFixed(2), style: pw.TextStyle(font: font, fontSize: 10)),
           ],
         ),
@@ -304,14 +324,14 @@ class PdfService {
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
-            pw.Text('الصافي:', style: pw.TextStyle(font: font, fontWeight: pw.FontWeight.bold, fontSize: 12)),
+            pw.Text(_shape('الصافي:'), style: pw.TextStyle(font: font, fontWeight: pw.FontWeight.bold, fontSize: 12)),
             pw.Text(total.toStringAsFixed(2), style: pw.TextStyle(font: font, fontWeight: pw.FontWeight.bold, fontSize: 12, color: PdfColors.blue900)),
           ],
         ),
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
-            pw.Text('المدفوع:', style: pw.TextStyle(font: font, fontSize: 10)),
+            pw.Text(_shape('المدفوع:'), style: pw.TextStyle(font: font, fontSize: 10)),
             pw.Text(paidAmount.toStringAsFixed(2), style: pw.TextStyle(font: font, fontSize: 10)),
           ],
         ),
@@ -319,7 +339,7 @@ class PdfService {
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
-            pw.Text('المتبقي من الفاتورة:', style: pw.TextStyle(font: font, fontWeight: pw.FontWeight.bold, fontSize: 10, color: PdfColors.red)),
+            pw.Text(_shape('المتبقي من الفاتورة:'), style: pw.TextStyle(font: font, fontWeight: pw.FontWeight.bold, fontSize: 10, color: PdfColors.red)),
             pw.Text(dueAmount.toStringAsFixed(2), style: pw.TextStyle(font: font, fontWeight: pw.FontWeight.bold, fontSize: 10, color: PdfColors.red)),
           ],
         ),
