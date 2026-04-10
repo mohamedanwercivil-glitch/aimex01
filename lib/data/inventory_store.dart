@@ -9,7 +9,6 @@ class InventoryStore {
   static final Box box = Hive.box('inventoryBox');
   static List<Map<String, dynamic>> _cachedItems = [];
 
-  // تحميل البيانات للذاكرة لتسريع البحث وحساب المتوسطات
   static void refreshCache() {
     final List<Map<String, dynamic>> items = [];
     for (var key in box.keys) {
@@ -36,7 +35,7 @@ class InventoryStore {
         'name': key,
         'quantity': totalQty,
         'lastBuyPrice': lastPrice,
-        'avgBuyPrice': avgPrice, // 🔥 المتوسط المتحرك بناءً على المتبقي فعلياً
+        'avgBuyPrice': avgPrice, 
         'createdAt': item['createdAt'],
       });
     }
@@ -74,7 +73,7 @@ class InventoryStore {
 
           final existingItem = box.get(name);
           box.put(name, {
-            'purchases': [{'qty': qty, 'price': buyPrice}], // استيراد كشروة أولى
+            'purchases': [{'qty': qty, 'price': buyPrice}],
             'lastBuyPrice': buyPrice,
             'createdAt': existingItem != null ? (existingItem['createdAt'] ?? oldDate) : oldDate,
           });
@@ -91,7 +90,6 @@ class InventoryStore {
     Map<String, dynamic> item = rawItem != null ? Map<String, dynamic>.from(rawItem) : {};
     List<Map<String, dynamic>> purchases = (item['purchases'] as List?)?.map((e) => Map<String, dynamic>.from(e)).toList() ?? [];
 
-    // إضافة شروة جديدة
     purchases.add({'qty': qty, 'price': buyPrice});
 
     box.put(name, {
@@ -110,7 +108,6 @@ class InventoryStore {
     final now = DateTime.now().toIso8601String();
     Map<String, dynamic> item = Map<String, dynamic>.from(rawItem);
     
-    // لتعديل الجرد يدوياً، نعتبر الكمية الحالية هي شروة واحدة بالسعر المحدد
     List<Map<String, dynamic>> purchases = [{'qty': newQty, 'price': newPrice}];
 
     box.put(name, {
@@ -132,17 +129,16 @@ class InventoryStore {
     double totalAvailable = purchases.fold(0, (sum, p) => sum + (p['qty'] as num).toDouble());
     if (totalAvailable < qtyToSell) return false;
 
-    // 🔥 تطبيق منطق FIFO: الخصم من أقدم المشتريات
     double remainingToSell = qtyToSell;
     while (remainingToSell > 0 && purchases.isNotEmpty) {
       double oldestQty = (purchases[0]['qty'] as num).toDouble();
       
       if (oldestQty <= remainingToSell) {
         remainingToSell -= oldestQty;
-        purchases.removeAt(0); // خلصنا الشروة القديمة بالكامل
+        purchases.removeAt(0); 
       } else {
         purchases[0]['qty'] = oldestQty - remainingToSell;
-        remainingToSell = 0; // خلصنا الكمية المطلوبة للبيع
+        remainingToSell = 0;
       }
     }
 
@@ -166,7 +162,6 @@ class InventoryStore {
     Map<String, dynamic> item = Map<String, dynamic>.from(rawItem);
     List<Map<String, dynamic>> purchases = (item['purchases'] as List?)?.map((e) => Map<String, dynamic>.from(e)).toList() ?? [];
 
-    // المرتجع يضاف كشروة جديدة (أو يضاف لأخر شروة) - يفضل كشروة جديدة بسعر آخر شراء لضمان دقة المتوسط
     purchases.add({'qty': qty, 'price': item['lastBuyPrice'] ?? 0.0});
 
     box.put(name, {
@@ -205,6 +200,14 @@ class InventoryStore {
     }).toList();
   }
 
+  static List<String> searchItemNames(String query) {
+    final normalizedQuery = ArabicUtils.normalize(query);
+    return getAllItems()
+        .where((item) => ArabicUtils.normalize(item['name'].toString()).contains(normalizedQuery))
+        .map((item) => "${item['name']} | المتاح: ${item['quantity']}")
+        .toList();
+  }
+
   static List<String> searchAvailableItemNames(String query) {
     final normalizedQuery = ArabicUtils.normalize(query);
     return getAllItems()
@@ -212,7 +215,7 @@ class InventoryStore {
           ArabicUtils.normalize(item['name'].toString()).contains(normalizedQuery) &&
           (item['quantity'] as double) > 0
         )
-        .map((item) => item['name'].toString())
+        .map((item) => "${item['name']} | المتاح: ${item['quantity']}")
         .toList();
   }
 }

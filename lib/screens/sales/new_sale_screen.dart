@@ -41,6 +41,12 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
   final _discountFocusNode = FocusNode();
   final _paidAmountFocusNode = FocusNode();
 
+  final secondPaidAmountController = TextEditingController();
+  final _secondPaidAmountFocusNode = FocusNode();
+  String secondPaymentType = 'تحويل';
+  String? secondSelectedWallet;
+  bool showSecondPayment = false;
+
   final ScrollController _scrollController = ScrollController();
 
   String paymentType = 'كاش';
@@ -56,13 +62,12 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
   double get discount => double.tryParse(discountController.text) ?? 0.0;
   double get total => subtotal - discount;
 
-  // رصيد العميل الحالي
   double currentCustomerBalance = 0.0;
 
   @override
   void initState() {
     super.initState();
-    LoggerService.action('فتح شاشة البيع - ${widget.editInvoiceId != null ? 'تعديل فاتورة: ${widget.editInvoiceId}' : 'فاتورة جديدة'}');
+    LoggerService.userAction('فتح شاشة البيع', {'التعديل': widget.editInvoiceId != null});
     if (widget.editInvoiceId != null) {
       _loadInvoiceForEdit(widget.editInvoiceId!);
     } else {
@@ -74,6 +79,10 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
       _saveDraft();
     });
     paidAmountController.addListener(() {
+      setState(() {});
+      _saveDraft();
+    });
+    secondPaidAmountController.addListener(() {
       setState(() {});
       _saveDraft();
     });
@@ -101,25 +110,37 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
     final invoiceRecords = allRecords.where((r) => r['invoiceId'] == invoiceId).toList();
 
     if (invoiceRecords.isNotEmpty) {
-      final first = invoiceRecords.first;
-      setState(() {
-        customerController.text = first['customer'] ?? '';
-        paymentType = (first['paymentType'] == 'نقدي' || first['paymentType'] == 'كاش') ? 'كاش' : first['paymentType'];
-        final savedWallet = first['wallet'];
-        selectedWallet = (savedWallet == 'نقدي' || savedWallet == '') ? null : savedWallet;
-        discountController.text = (first['discount'] ?? 0).toString();
-        paidAmountController.text = (first['paidAmount'] ?? 0).toString();
-        originalInvoiceNumber = first['invoiceNumber']?.toString();
+      final saleRecords = invoiceRecords.where((r) => r['type'] == 'sale').toList();
+      final settlementRecords = invoiceRecords.where((r) => r['type'] == 'settlement').toList();
 
-        items = invoiceRecords.map((e) => SaleItem(
-          name: e['item'],
-          qty: (e['qty'] as num).toDouble(),
-          price: (e['price'] as num).toDouble(),
-          isReturn: e['isReturn'] ?? false,
-        )).toList();
-      });
-      _updateCustomerBalance();
-      LoggerService.logic('تم تحميل بيانات التعديل للفاتورة $invoiceId - عدد الأصناف: ${items.length}');
+      if (saleRecords.isNotEmpty) {
+        final first = saleRecords.first;
+        setState(() {
+          customerController.text = first['customer'] ?? '';
+          paymentType = (first['paymentType'] == 'نقدي' || first['paymentType'] == 'كاش') ? 'كاش' : first['paymentType'];
+          final savedWallet = first['wallet'];
+          selectedWallet = (savedWallet == 'نقدي' || savedWallet == '') ? null : savedWallet;
+          discountController.text = (first['discount'] ?? 0).toString();
+          paidAmountController.text = (first['paidAmount'] ?? 0).toString();
+          originalInvoiceNumber = first['invoiceNumber']?.toString();
+
+          items = saleRecords.map((e) => SaleItem(
+            name: e['item'],
+            qty: (e['qty'] as num).toDouble(),
+            price: (e['price'] as num).toDouble(),
+            isReturn: e['isReturn'] ?? false,
+          )).toList();
+
+          if (settlementRecords.isNotEmpty) {
+            showSecondPayment = true;
+            final second = settlementRecords.first;
+            secondPaidAmountController.text = (second['amount'] ?? 0).toString();
+            secondPaymentType = second['paymentType'] ?? 'تحويل';
+            secondSelectedWallet = second['wallet'] == 'نقدي' ? null : second['wallet'];
+          }
+        });
+        _updateCustomerBalance();
+      }
     }
   }
 
@@ -132,6 +153,12 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
         selectedWallet = (draft['wallet'] == 'نقدي') ? null : draft['wallet'];
         discountController.text = draft['discount'] ?? '0';
         paidAmountController.text = draft['paidAmount'] ?? '0';
+        
+        showSecondPayment = draft['showSecondPayment'] ?? false;
+        secondPaidAmountController.text = draft['secondPaidAmount'] ?? '0';
+        secondPaymentType = draft['secondPaymentType'] ?? 'تحويل';
+        secondSelectedWallet = draft['secondWallet'];
+
         final List<dynamic> draftItems = draft['items'] ?? [];
         items = draftItems.map((e) => SaleItem(
           name: e['name'],
@@ -141,10 +168,10 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
         )).toList();
       });
       _updateCustomerBalance();
-      LoggerService.info('تم استرجاع مسودة غير محفوظة للعميل: ${customerController.text}');
     } else {
       paidAmountController.text = '0';
       discountController.text = '0';
+      secondPaidAmountController.text = '0';
     }
   }
 
@@ -157,6 +184,12 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
       discount: discountController.text,
       paidAmount: paidAmountController.text,
       items: items.map((e) => {'name': e.name, 'qty': e.qty, 'price': e.price, 'isReturn': e.isReturn}).toList(),
+      extra: {
+        'showSecondPayment': showSecondPayment,
+        'secondPaidAmount': secondPaidAmountController.text,
+        'secondPaymentType': secondPaymentType,
+        'secondWallet': secondSelectedWallet,
+      }
     );
   }
 
@@ -170,7 +203,7 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
           TextButton(
             onPressed: () {
-              LoggerService.action('ضغط زر مسح البيانات الحالية (Reset Form)');
+              LoggerService.userAction('مسح فاتورة مبيعات (Reset)');
               setState(() {
                 items.clear();
                 customerController.clear();
@@ -179,6 +212,8 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
                 priceController.clear();
                 paidAmountController.text = '0';
                 discountController.text = '0';
+                secondPaidAmountController.text = '0';
+                showSecondPayment = false;
                 paymentType = 'كاش';
                 selectedWallet = null;
                 originalInvoiceNumber = null;
@@ -204,12 +239,14 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
     priceController.dispose();
     paidAmountController.dispose();
     discountController.dispose();
+    secondPaidAmountController.dispose();
     _customerFocusNode.dispose();
     _itemFocusNode.dispose();
     _qtyFocusNode.dispose();
     _priceFocusNode.dispose();
     _discountFocusNode.dispose();
     _paidAmountFocusNode.dispose();
+    _secondPaidAmountFocusNode.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -219,10 +256,9 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
     final qty = double.tryParse(qtyController.text) ?? 0.0;
     final price = double.tryParse(priceController.text) ?? 0.0;
 
-    LoggerService.action('ضغط زر إضافة صنف: $name، كمية: $qty، سعر: $price، مرتجع: $_isReturnMode');
+    LoggerService.userAction('إضافة صنف للفاتورة', {'صنف': name, 'كمية': qty, 'سعر': price, 'مرتجع': _isReturnMode});
 
     if (name.isEmpty || qty <= 0 || price <= 0) {
-      LoggerService.warn('فشل إضافة صنف: بيانات ناقصة أو غير صحيحة');
       ToastService.show('اكمل بيانات الصنف');
       return;
     }
@@ -230,10 +266,19 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
     if (!_isReturnMode && widget.editInvoiceId == null) {
       final stockQty = InventoryStore.getItemQty(name);
       if (qty > stockQty) {
-        LoggerService.warn('فشل إضافة صنف: الكمية المطلوبة ($qty) أكبر من المتاح ($stockQty)');
         ToastService.show('الكمية المتاحة في المخزن حالياً هي: $stockQty');
         return;
       }
+    }
+
+    final existingIndex = items.indexWhere((item) => item.name == name && item.isReturn == _isReturnMode);
+    if (existingIndex != -1 && existingIndex != editingIndex) {
+      ToastService.show('هذا الصنف موجود بالفعل في القائمة بالأسفل');
+      if (_scrollController.hasClients) {
+        final targetOffset = existingIndex * 65.0; 
+        _scrollController.animateTo(targetOffset, duration: const Duration(milliseconds: 500), curve: Curves.easeInOut);
+      }
+      return;
     }
 
     setState(() {
@@ -252,46 +297,47 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
     _saveDraft();
   }
 
-  String _calculateNewInvoiceNumber() {
-    if (originalInvoiceNumber != null) return originalInvoiceNumber!;
-    return DayRecordsStore.getNextInvoiceNumber('sale').toString();
-  }
-
   Future<void> _saveSale() async {
-    LoggerService.action('ضغط زر حفظ الفاتورة النهائي - إجمالي: $total');
+    LoggerService.userAction('ضغط زر حفظ فاتورة بيع', {'إجمالي': total});
     if (_isSaving) return;
 
     if (!context.read<DayState>().dayStarted) {
-      LoggerService.warn('محاولة حفظ فاتورة واليوم لم يبدأ بعد');
       ToastService.show('يجب بدء اليوم أولاً');
       return;
     }
 
     final customer = customerController.text.trim();
     if (customer.isEmpty || items.isEmpty) {
-      LoggerService.warn('محاولة حفظ فاتورة فارغة أو بدون اسم عميل');
       ToastService.show('اكمل بيانات الفاتورة');
       return;
     }
 
-    final paidAmountValue = paymentType == 'آجل' ? 0.0 : double.tryParse(paidAmountController.text) ?? 0.0;
+    if (paymentType == 'تحويل' && selectedWallet == null) {
+      ToastService.show('يجب اختيار المحفظة لطريقة الدفع الأولى');
+      return;
+    }
+    if (showSecondPayment && secondPaymentType == 'تحويل' && secondSelectedWallet == null) {
+      ToastService.show('يجب اختيار المحفظة لطريقة الدفع الثانية');
+      return;
+    }
 
-    if (paymentType != 'آجل' && paidAmountValue < total) {
-      final diff = total - paidAmountValue;
+    final p1 = paymentType == 'آجل' ? 0.0 : (double.tryParse(paidAmountController.text) ?? 0.0);
+    final p2 = showSecondPayment ? (double.tryParse(secondPaidAmountController.text) ?? 0.0) : 0.0;
+    final totalPaid = p1 + p2;
+
+    if (paymentType != 'آجل' && totalPaid < total) {
+      final diff = total - totalPaid;
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('تنبيه: المبلغ المدفوع أقل من الإجمالي'),
-          content: Text('صافي الفاتورة: ${total.toStringAsFixed(2)}\nالمبلغ المدفوع: ${paidAmountValue.toStringAsFixed(2)}\nالعجز: ${diff.toStringAsFixed(2)}\n\nكيف تريد معالجة العجز؟'),
+          content: Text('صافي الفاتورة: ${total.toStringAsFixed(2)}\nالمبلغ المدفوع: ${totalPaid.toStringAsFixed(2)}\nالعجز: ${diff.toStringAsFixed(2)}\n\nكيف تريد معالجة العجز؟'),
           actions: [
             Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _performSave(paidAmountValue);
-                  },
+                  onPressed: () { Navigator.pop(context); _performSave(p1, p2); },
                   child: const Text('ترحيل الباقي لحساب العميل (آجل)'),
                 ),
                 ElevatedButton(
@@ -300,15 +346,12 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
                     final currentDiscount = double.tryParse(discountController.text) ?? 0.0;
                     discountController.text = (currentDiscount + diff).toStringAsFixed(2);
                     setState(() {});
-                    _performSave(paidAmountValue);
+                    _performSave(p1, p2);
                   },
                   child: const Text('اعتبار العجز خصم إضافي'),
                 ),
                 TextButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _paidAmountFocusNode.requestFocus();
-                  },
+                  onPressed: () { Navigator.pop(context); _paidAmountFocusNode.requestFocus(); },
                   child: const Text('تعديل المبلغ المدفوع'),
                 ),
               ],
@@ -319,10 +362,161 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
       return;
     }
 
-    _performSave(paidAmountValue);
+    _performSave(p1, p2);
   }
 
-  Future<void> _generateAndShareInvoice(String invoiceNumber, double paidAmountValue, double dueAmount) async {
+  void _performSave(double p1, double p2) async {
+    setState(() => _isSaving = true);
+    final customerName = customerController.text.trim();
+    LoggerService.logicEffect('بدء حفظ فاتورة بيع', {'عميل': customerName, 'دفع1': p1, 'دفع2': p2, 'تعديل': widget.editInvoiceId});
+
+    try {
+      Map<String, double> stockBefore = {};
+      for (var it in items) stockBefore[it.name] = InventoryStore.getItemQty(it.name);
+      double customerBalanceBefore = CustomerStore.getBalance(customerName);
+
+      if (p1 < 0) {
+        final check1 = FinanceService.withdraw(amount: p1.abs(), paymentType: paymentType, walletName: paymentType == 'تحويل' ? selectedWallet : null, dryRun: true);
+        if (!check1.success) {
+          ToastService.show('الدفعة الأولى: ${check1.message}');
+          setState(() => _isSaving = false);
+          return;
+        }
+      }
+      if (p2 < 0) {
+        final check2 = FinanceService.withdraw(amount: p2.abs(), paymentType: secondPaymentType, walletName: secondPaymentType == 'تحويل' ? secondSelectedWallet : null, dryRun: true);
+        if (!check2.success) {
+          ToastService.show('الدفعة الثانية: ${check2.message}');
+          setState(() => _isSaving = false);
+          return;
+        }
+      }
+
+      if (widget.editInvoiceId != null) {
+        LoggerService.logicEffect('عكس أثر الفاتورة القديمة للتعديل', {'id': widget.editInvoiceId});
+        DayRecordsStore.reverseInvoiceEffects(widget.editInvoiceId!);
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
+
+      for (final item in items) {
+        if (item.isReturn) {
+          LoggerService.logicEffect('إرجاع للمخزن (مرتجع مبيعات)', {'صنف': item.name, 'كمية': item.qty});
+          InventoryStore.returnItem(item.name, item.qty);
+        } else {
+          LoggerService.logicEffect('خصم من المخزن (بيع)', {'صنف': item.name, 'كمية': item.qty});
+          InventoryStore.sellItem(item.name, item.qty);
+        }
+      }
+
+      double primaryPaid = p1;
+      String primaryType = paymentType;
+      String? primaryWallet = selectedWallet;
+      double secondaryPaid = p2;
+      String secondaryType = secondPaymentType;
+      String? secondaryWallet = secondSelectedWallet;
+
+      if (showSecondPayment && paymentType != 'كاش' && secondPaymentType == 'كاش') {
+        primaryPaid = p2; primaryType = secondPaymentType; primaryWallet = secondSelectedWallet;
+        secondaryPaid = p1; secondaryType = paymentType; secondaryWallet = selectedWallet;
+      }
+
+      CustomerStore.addCustomer(customerName);
+      final invoiceDue = total - primaryPaid;
+      CustomerStore.updateBalance(customerName, invoiceDue);
+      if (secondaryPaid != 0) {
+        CustomerStore.updateBalance(customerName, -secondaryPaid);
+      }
+
+      if (primaryPaid != 0) {
+        if (primaryPaid > 0) {
+          FinanceService.deposit(amount: primaryPaid, paymentType: primaryType, walletName: primaryType == 'تحويل' ? primaryWallet : null);
+        } else {
+          FinanceService.withdraw(amount: primaryPaid.abs(), paymentType: primaryType, walletName: primaryType == 'تحويل' ? primaryWallet : null);
+        }
+      }
+      if (secondaryPaid != 0) {
+        if (secondaryPaid > 0) {
+          FinanceService.deposit(amount: secondaryPaid, paymentType: secondaryType, walletName: secondaryType == 'تحويل' ? secondaryWallet : null);
+        } else {
+          FinanceService.withdraw(amount: secondaryPaid.abs(), paymentType: secondaryType, walletName: secondaryType == 'تحويل' ? secondaryWallet : null);
+        }
+      }
+
+      final invoiceNumber = originalInvoiceNumber ?? DayRecordsStore.getNextInvoiceNumber('sale').toString();
+      const uuid = Uuid();
+      final invoiceId = uuid.v4();
+
+      for (final item in items) {
+        DayRecordsStore.addRecord({
+          'type': 'sale',
+          'invoiceId': invoiceId,
+          'invoiceNumber': invoiceNumber,
+          'customer': customerName,
+          'item': item.name,
+          'qty': item.qty,
+          'price': item.price,
+          'total': item.total,
+          'isReturn': item.isReturn,
+          'invoiceTotal': total,
+          'paidAmount': primaryPaid,
+          'dueAmount': invoiceDue,
+          'paymentType': primaryType,
+          'wallet': primaryType == 'تحويل' ? primaryWallet ?? '' : 'نقدي',
+          'time': DateTime.now().toString(),
+          'discount': discount,
+        });
+      }
+
+      if (secondaryPaid != 0) {
+        final dateStr = intl_lib.DateFormat('yyyy-MM-dd').format(DateTime.now());
+        DayRecordsStore.addRecord({
+          'type': 'settlement',
+          'invoiceId': invoiceId,
+          'customer': customerName,
+          'amount': secondaryPaid,
+          'paymentType': secondaryType,
+          'wallet': secondaryType == 'تحويل' ? secondaryWallet ?? '' : 'نقدي',
+          'date': DateTime.now().toString(),
+          'remarks': 'دفعة من فاتورة بيع رقم $invoiceNumber بتاريخ $dateStr',
+        });
+      }
+
+      Map<String, double> stockAfter = {};
+      for (var it in items) stockAfter[it.name] = InventoryStore.getItemQty(it.name);
+      LoggerService.stateChange('المخزن بعد البيع', stockBefore, stockAfter);
+      LoggerService.stateChange('حساب العميل بعد البيع', customerBalanceBefore, CustomerStore.getBalance(customerName));
+
+      final actualDue = total - (primaryPaid + secondaryPaid);
+      await _generateAndShareInvoice(invoiceNumber, primaryPaid + secondaryPaid, actualDue);
+
+      DraftStore.clearSalesDraft();
+      if (widget.editInvoiceId != null) {
+        Navigator.pop(context);
+      } else {
+        setState(() {
+          items.clear();
+          customerController.clear();
+          paidAmountController.text = '0';
+          secondPaidAmountController.text = '0';
+          discountController.text = '0';
+          paymentType = 'كاش';
+          selectedWallet = null;
+          showSecondPayment = false;
+          _isReturnMode = false;
+          currentCustomerBalance = 0.0;
+        });
+        _customerFocusNode.requestFocus();
+      }
+      ToastService.show('تم حفظ الفاتورة بنجاح');
+    } catch (e, stack) {
+      LoggerService.error('خطأ قاتل أثناء حفظ فاتورة المبيعات', error: e, stackTrace: stack);
+      ToastService.show('حدث خطأ أثناء الحفظ، يرجى مراجعة اللوج');
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  Future<void> _generateAndShareInvoice(String invoiceNumber, double totalPaid, double dueAmount) async {
     try {
       final customerName = customerController.text.trim();
       final pdfData = await PdfService.generateInvoice(
@@ -331,7 +525,7 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
         subtotal: subtotal,
         discount: discount,
         total: total,
-        paidAmount: paidAmountValue,
+        paidAmount: totalPaid,
         dueAmount: dueAmount,
         invoiceId: invoiceNumber,
         previousBalance: CustomerStore.getBalance(customerName) - dueAmount,
@@ -348,101 +542,15 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
       await Share.shareXFiles([XFile(file.path)], text: 'فاتورة مبيعات - $customerName');
     } catch (e) {
       LoggerService.error('خطأ أثناء توليد أو مشاركة الفاتورة', error: e);
-      ToastService.show('حدث خطأ أثناء مشاركة الفاتورة');
-    }
-  }
-
-  void _performSave(double paidAmountValue) async {
-    setState(() => _isSaving = true);
-    LoggerService.logic('بدء معالجة الحفظ: العميل: ${customerController.text}، المدفوع: $paidAmountValue');
-
-    try {
-      if (widget.editInvoiceId != null) {
-        LoggerService.logic('وضع التعديل: عكس أثر الفاتورة القديمة ${widget.editInvoiceId}');
-        DayRecordsStore.reverseInvoiceEffects(widget.editInvoiceId!);
-        await Future.delayed(const Duration(milliseconds: 50));
-      }
-
-      for (final item in items) {
-        if (item.isReturn) {
-          InventoryStore.returnItem(item.name, item.qty);
-        } else {
-          InventoryStore.sellItem(item.name, item.qty);
-        }
-      }
-
-      CustomerStore.addCustomer(customerController.text.trim());
-      final dueAmount = total - paidAmountValue;
-      CustomerStore.updateBalance(customerController.text.trim(), dueAmount);
-
-      if (paidAmountValue != 0) {
-        if (paidAmountValue > 0) {
-          FinanceService.deposit(amount: paidAmountValue, paymentType: paymentType, walletName: paymentType == 'تحويل' ? selectedWallet : null);
-        } else {
-          FinanceService.withdraw(amount: paidAmountValue.abs(), paymentType: paymentType, walletName: paymentType == 'تحويل' ? selectedWallet : null);
-        }
-      }
-
-      final invoiceNumber = _calculateNewInvoiceNumber();
-      const uuid = Uuid();
-      final invoiceId = uuid.v4();
-
-      for (final item in items) {
-        DayRecordsStore.addRecord({
-          'type': 'sale',
-          'invoiceId': invoiceId,
-          'invoiceNumber': invoiceNumber,
-          'customer': customerController.text.trim(),
-          'item': item.name,
-          'qty': item.qty,
-          'price': item.price,
-          'total': item.total,
-          'isReturn': item.isReturn,
-          'invoiceTotal': total,
-          'paidAmount': paidAmountValue,
-          'dueAmount': dueAmount,
-          'paymentType': paymentType,
-          'wallet': paymentType == 'تحويل' ? selectedWallet ?? '' : 'نقدي',
-          'time': DateTime.now().toString(),
-          'discount': discount,
-        });
-      }
-
-      await _generateAndShareInvoice(invoiceNumber, paidAmountValue, dueAmount);
-
-      LoggerService.info('تم حفظ الفاتورة بنجاح: رقم $invoiceNumber');
-      DraftStore.clearSalesDraft();
-
-      if (widget.editInvoiceId != null) {
-        if (mounted) Navigator.pop(context);
-      } else {
-        setState(() {
-          items.clear();
-          customerController.clear();
-          paidAmountController.text = '0';
-          discountController.text = '0';
-          paymentType = 'كاش';
-          selectedWallet = null;
-          _isReturnMode = false;
-          currentCustomerBalance = 0.0;
-        });
-        _customerFocusNode.requestFocus();
-      }
-      ToastService.show('تم حفظ الفاتورة بنجاح');
-    } catch (e, stack) {
-      LoggerService.error('خطأ قاتل أثناء حفظ الفاتورة', error: e, stackTrace: stack);
-      ToastService.show('حدث خطأ أثناء الحفظ، يرجى مراجعة اللوج');
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final dayStarted = context.watch<DayState>().dayStarted;
-    
-    // حساب الرصيد المتوقع بعد هذه الفاتورة
-    double futureBalance = currentCustomerBalance + total - (double.tryParse(paidAmountController.text) ?? 0);
+    final p1 = double.tryParse(paidAmountController.text) ?? 0;
+    final p2 = showSecondPayment ? (double.tryParse(secondPaidAmountController.text) ?? 0) : 0;
+    double futureBalance = currentCustomerBalance + total - (p1 + p2);
 
     return Scaffold(
       appBar: AppBar(
@@ -463,7 +571,7 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
                       controller: customerController,
                       label: 'اسم العميل',
                       onSearch: (value) => CustomerStore.searchCustomers(value),
-                      onSelected: (v) { LoggerService.action('اختيار عميل: $v'); _itemFocusNode.requestFocus(); _saveDraft(); },
+                      onSelected: (v) { LoggerService.userAction('اختيار عميل', {'اسم': v}); _itemFocusNode.requestFocus(); _saveDraft(); },
                       textInputAction: TextInputAction.next,
                     ),
                   ),
@@ -549,7 +657,7 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
                     decoration: BoxDecoration(
                       border: Border.all(color: _isReturnMode ? Colors.red : Colors.grey),
                       borderRadius: BorderRadius.circular(8),
-                      color: _isReturnMode ? Colors.red.withValues(alpha: 0.1) : null,
+                      color: _isReturnMode ? Colors.red.withOpacity(0.1) : null,
                     ),
                     child: Row(
                       children: [
@@ -579,7 +687,7 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
               ),
               const SizedBox(height: 20),
               Container(
-                constraints: const BoxConstraints(maxHeight: 300),
+                constraints: const BoxConstraints(maxHeight: 250),
                 decoration: BoxDecoration(
                   border: Border.all(color: Colors.grey.shade300),
                   borderRadius: BorderRadius.circular(8),
@@ -767,6 +875,51 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
                 labelText: 'المبلغ المدفوع حالياً',
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 onChanged: (_) => setState(() {}),
+              ),
+            ],
+            const Divider(height: 30),
+            Row(
+              children: [
+                Checkbox(value: showSecondPayment, onChanged: _isSaving ? null : (v) { setState(() => showSecondPayment = v ?? false); _saveDraft(); }),
+                const Text('إضافة طريقة دفع ثانية (متعدد)', style: TextStyle(fontWeight: FontWeight.w500)),
+              ],
+            ),
+            if (showSecondPayment) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey.shade300)),
+                child: Column(
+                  children: [
+                    DropdownButtonFormField<String>(
+                      value: secondPaymentType,
+                      decoration: const InputDecoration(labelText: 'طريقة الدفع الثانية', border: OutlineInputBorder()),
+                      items: const [
+                        DropdownMenuItem(value: 'كاش', child: Text('كاش')),
+                        DropdownMenuItem(value: 'تحويل', child: Text('تحويل')),
+                      ],
+                      onChanged: _isSaving ? null : (v) => setState(() { secondPaymentType = v!; _saveDraft(); }),
+                    ),
+                    if (secondPaymentType == 'تحويل') ...[
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: secondSelectedWallet,
+                        decoration: const InputDecoration(labelText: 'اختر المحفظة الثانية', border: OutlineInputBorder()),
+                        items: wallets.map((w) => DropdownMenuItem(value: w, child: Text(w))).toList(),
+                        onChanged: _isSaving ? null : (v) => setState(() { secondSelectedWallet = v; _saveDraft(); }),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    SelectableTextField(
+                      focusNode: _secondPaidAmountFocusNode,
+                      enabled: !_isSaving,
+                      controller: secondPaidAmountController,
+                      labelText: 'المبلغ المدفوع (الثاني)',
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  ],
+                ),
               ),
             ],
           ],

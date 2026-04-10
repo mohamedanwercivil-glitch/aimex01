@@ -48,16 +48,26 @@ class _DailyPurchaseInvoicesScreenState extends State<DailyPurchaseInvoicesScree
       final invoiceRecords = allRecords.where((r) => r['invoiceId'] == invoiceId).toList();
       if (invoiceRecords.isEmpty) return;
 
-      final first = invoiceRecords.first;
+      final purchaseRecords = invoiceRecords.where((r) => r['type'] == 'purchase').toList();
+      final settlementRecords = invoiceRecords.where((r) => r['type'] == 'supplier_settlement').toList();
+
+      if (purchaseRecords.isEmpty) return;
+
+      final first = purchaseRecords.first;
       final supplierName = first['supplier'];
       final invoiceNumber = first['invoiceNumber']?.toString() ?? '0';
       
-      final List<SaleItem> items = invoiceRecords.map((e) => SaleItem(
+      final List<SaleItem> items = purchaseRecords.map((e) => SaleItem(
         name: e['item'],
         qty: (e['qty'] as num).toDouble(),
         price: (e['price'] as num).toDouble(),
         isReturn: e['isReturn'] ?? false,
       )).toList();
+
+      final primaryPaid = (first['paidAmount'] as num).toDouble();
+      final secondaryPaid = settlementRecords.fold(0.0, (sum, r) => sum + (r['amount'] as num).toDouble());
+      final totalPaid = primaryPaid + secondaryPaid;
+      final actualDue = (first['invoiceTotal'] as num).toDouble() - totalPaid;
 
       final pdfData = await PdfService.generateInvoice(
         customerName: supplierName,
@@ -65,10 +75,10 @@ class _DailyPurchaseInvoicesScreenState extends State<DailyPurchaseInvoicesScree
         subtotal: (first['invoiceTotal'] as num).toDouble() + (first['discount'] as num? ?? 0).toDouble(),
         discount: (first['discount'] as num? ?? 0).toDouble(),
         total: (first['invoiceTotal'] as num).toDouble(),
-        paidAmount: (first['paidAmount'] as num).toDouble(),
-        dueAmount: (first['dueAmount'] as num).toDouble(),
+        paidAmount: totalPaid,
+        dueAmount: actualDue,
         invoiceId: invoiceNumber,
-        previousBalance: SupplierStore.getBalance(supplierName) - (first['dueAmount'] as num).toDouble(),
+        previousBalance: SupplierStore.getBalance(supplierName) - actualDue,
         newBalance: SupplierStore.getBalance(supplierName),
         isPurchase: true,
       );
@@ -88,27 +98,37 @@ class _DailyPurchaseInvoicesScreenState extends State<DailyPurchaseInvoicesScree
   @override
   Widget build(BuildContext context) {
     final allRecords = DayRecordsStore.getAll();
-    final Map<String, Map<String, dynamic>> invoicesMap = {};
-    double totalPurchasesPaid = 0;
-    double totalExpenses = 0;
-    double totalTransferFees = 0;
     
+    // تجميع الفواتير مع حساب إجمالي المدفوعات (الأساسية + التكميلية)
+    final Map<String, Map<String, dynamic>> invoicesMap = {};
+    final Map<String, double> extraPaymentsMap = {};
+
     for (var record in allRecords) {
-      // حساب إجمالي المدفوع في فواتير الشراء
       if (record['type'] == 'purchase' && record['invoiceId'] != null) {
         final id = record['invoiceId'];
         if (!invoicesMap.containsKey(id)) {
           invoicesMap[id] = record;
-          totalPurchasesPaid += (record['paidAmount'] as num?)?.toDouble() ?? 0.0;
         }
       }
-      
-      // حساب إجمالي المصاريف
+      if (record['type'] == 'supplier_settlement' && record['invoiceId'] != null) {
+        final id = record['invoiceId'];
+        extraPaymentsMap[id] = (extraPaymentsMap[id] ?? 0.0) + (record['amount'] as num).toDouble();
+      }
+    }
+
+    double totalPurchasesPaid = 0;
+    for (var id in invoicesMap.keys) {
+      final primaryPaid = (invoicesMap[id]!['paidAmount'] as num?)?.toDouble() ?? 0.0;
+      final secondaryPaid = extraPaymentsMap[id] ?? 0.0;
+      totalPurchasesPaid += (primaryPaid + secondaryPaid);
+    }
+
+    double totalExpenses = 0;
+    double totalTransferFees = 0;
+    for (var record in allRecords) {
       if (record['type'] == 'expense') {
         totalExpenses += (record['amount'] as num?)?.toDouble() ?? 0.0;
       }
-
-      // حساب مصاريف التحويل
       if (record['type'] == 'transfer') {
         totalTransferFees += (record['fee'] as num?)?.toDouble() ?? 0.0;
       }
@@ -124,13 +144,12 @@ class _DailyPurchaseInvoicesScreenState extends State<DailyPurchaseInvoicesScree
       ),
       body: Column(
         children: [
-          // كارت إجمالي المبالغ الخارجة
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: Colors.red.shade900,
-              boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2))],
+              boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2))],
             ),
             child: Column(
               children: [
@@ -162,6 +181,11 @@ class _DailyPurchaseInvoicesScreenState extends State<DailyPurchaseInvoicesScree
                     itemCount: invoiceList.length,
                     itemBuilder: (context, index) {
                       final invoice = invoiceList[index];
+                      final id = invoice['invoiceId'];
+                      final primaryPaid = (invoice['paidAmount'] as num?)?.toDouble() ?? 0.0;
+                      final secondaryPaid = extraPaymentsMap[id] ?? 0.0;
+                      final totalPaid = primaryPaid + secondaryPaid;
+
                       return Card(
                         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         child: ListTile(
@@ -173,7 +197,7 @@ class _DailyPurchaseInvoicesScreenState extends State<DailyPurchaseInvoicesScree
                             ),
                           ),
                           title: Text('المورد: ${invoice['supplier']}'),
-                          subtitle: Text('الإجمالي: ${invoice['invoiceTotal']} | مدفوع: ${invoice['paidAmount']}'),
+                          subtitle: Text('الإجمالي: ${invoice['invoiceTotal']} | مدفوع: ${totalPaid.toStringAsFixed(2)}'),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [

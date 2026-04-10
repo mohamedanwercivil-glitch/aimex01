@@ -14,6 +14,7 @@ class DraftStore {
     required String discount,
     required String paidAmount,
     required List<dynamic> items,
+    Map<String, dynamic>? extra,
   }) {
     _salesBox.put('current', {
       'customer': customer,
@@ -22,7 +23,6 @@ class DraftStore {
       'discount': discount,
       'paidAmount': paidAmount,
       'items': items.map((e) {
-        // e might be a SaleItem or a Map depending on where it's called from
         if (e is Map) return e;
         return {
           'name': e.name,
@@ -31,6 +31,7 @@ class DraftStore {
           'isReturn': e.isReturn,
         };
       }).toList(),
+      if (extra != null) ...extra,
     });
   }
 
@@ -54,6 +55,7 @@ class DraftStore {
     required String discount,
     required String paidAmount,
     required List<dynamic> items,
+    Map<String, dynamic>? extra,
   }) {
     _purchasesBox.put('current', {
       'supplier': supplier,
@@ -70,6 +72,7 @@ class DraftStore {
           'isReturn': e.isReturn,
         };
       }).toList(),
+      if (extra != null) ...extra,
     });
   }
 

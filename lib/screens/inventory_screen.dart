@@ -11,7 +11,7 @@ class InventoryScreen extends StatefulWidget {
 class _InventoryScreenState extends State<InventoryScreen> {
   final searchController = TextEditingController();
   List<Map<String, dynamic>> items = [];
-  bool _hideZeroStock = false; // التحكم في إخفاء الرصيد الصفر
+  bool _hideZeroStock = false; 
 
   @override
   void initState() {
@@ -42,7 +42,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
   double _calculateTotalInventoryValue() {
     double total = 0;
-    // نحسب القيمة بناءً على كل الأصناف في المخزن (ليس فقط المفلترة)
     for (var item in InventoryStore.getAllItems()) {
       double qty = (item['quantity'] as num?)?.toDouble() ?? 0.0;
       double price = (item['avgBuyPrice'] as num?)?.toDouble() ?? 0.0;
@@ -112,23 +111,33 @@ class _InventoryScreenState extends State<InventoryScreen> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            // 💰 كارت إجمالي قيمة المخزن
+            // 💰 كارت إجمالي قيمة المخزن (تم تعديله لمنع الـ Overflow)
             Card(
               color: Colors.blue.shade900,
               elevation: 4,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
               child: Padding(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.all(16),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
-                      'إجمالي قيمة المخزن:',
-                      style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                    const Expanded(
+                      flex: 2,
+                      child: Text(
+                        'إجمالي قيمة المخزن:',
+                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
                     ),
-                    Text(
-                      '${totalValue.toStringAsFixed(2)} ج.م',
-                      style: const TextStyle(color: Colors.yellowAccent, fontSize: 22, fontWeight: FontWeight.bold),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      flex: 3,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '${totalValue.toStringAsFixed(2)} ج.م',
+                          style: const TextStyle(color: Colors.yellowAccent, fontSize: 22, fontWeight: FontWeight.bold),
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -136,7 +145,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
             ),
             const SizedBox(height: 16),
             
-            // 🔍 مربع البحث والفلتر
             Row(
               children: [
                 Expanded(

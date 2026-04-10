@@ -31,35 +31,41 @@ class DayRecordsStore {
     final records = allRecords.where((r) => r['invoiceId'] == invoiceId || r['id'] == invoiceId).toList();
     if (records.isEmpty) return;
 
-    final first = records.first;
-    final type = first['type'];
-
-    switch (type) {
-      case 'sale':
-        _reverseSale(records);
-        break;
-      case 'purchase':
-        _reversePurchase(records);
-        break;
-      case 'sales_return':
-        _reverseSalesReturn(records);
-        break;
-      case 'expense':
-        _reverseExpense(first);
-        break;
-      case 'withdraw':
-        _reverseWithdraw(first);
-        break;
-      case 'settlement':
-        _reverseSettlement(first);
-        break;
-      case 'supplier_settlement':
-        _reverseSupplierSettlement(first);
-        break;
-      case 'transfer':
-        _reverseTransfer(first);
-        break;
+    // Group records by type to handle them correctly
+    final groupedByType = <String, List<Map<String, dynamic>>>{};
+    for (var r in records) {
+      final type = r['type'] as String;
+      groupedByType.putIfAbsent(type, () => []).add(r);
     }
+
+    groupedByType.forEach((type, typeRecords) {
+      switch (type) {
+        case 'sale':
+          _reverseSale(typeRecords);
+          break;
+        case 'purchase':
+          _reversePurchase(typeRecords);
+          break;
+        case 'sales_return':
+          _reverseSalesReturn(typeRecords);
+          break;
+        case 'expense':
+          for (var r in typeRecords) _reverseExpense(r);
+          break;
+        case 'withdraw':
+          for (var r in typeRecords) _reverseWithdraw(r);
+          break;
+        case 'settlement':
+          for (var r in typeRecords) _reverseSettlement(r);
+          break;
+        case 'supplier_settlement':
+          for (var r in typeRecords) _reverseSupplierSettlement(r);
+          break;
+        case 'transfer':
+          for (var r in typeRecords) _reverseTransfer(r);
+          break;
+      }
+    });
 
     deleteRecordsById(invoiceId);
   }
@@ -104,7 +110,6 @@ class DayRecordsStore {
     SupplierStore.updateBalance(supplier, -dueAmount);
 
     if (paidAmount != 0) {
-      // عند إرجاع فاتورة شراء، المبالغ التي دفعت يجب أن تعود للخزنة (Deposit)
       FinanceService.deposit(
         amount: paidAmount.abs(),
         paymentType: (paymentType == 'تحويل') ? 'تحويل' : 'كاش',
@@ -113,7 +118,6 @@ class DayRecordsStore {
     }
 
     for (var r in records) {
-      // إرجاع الكميات المشتراة من المخزن (سحبها منه)
       InventoryStore.sellItem(r['item'], (r['qty'] as num).toDouble());
     }
   }

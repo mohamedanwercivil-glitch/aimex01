@@ -36,6 +36,7 @@ class FinanceService {
     required String paymentType,
     String? walletName,
     bool allowNegative = false, // 🔥 استثناء لعمليات التصحيح (Reverse)
+    bool dryRun = false,        // 🔥 للتحقق من الرصيد فقط بدون خصم فعلي
   }) {
     if (paymentType == 'كاش' || paymentType == 'نقدي') {
       final currentCash = CashState.instance.cash;
@@ -44,7 +45,7 @@ class FinanceService {
           'عذراً، الرصيد النقدي غير كافي.\nالمطلوب: $amount | المتاح: $currentCash');
       }
 
-      CashState.instance.withdrawCash(amount);
+      if (!dryRun) CashState.instance.withdrawCash(amount);
       return FinanceResult(true, 'تم خصم المبلغ من الكاش');
     }
 
@@ -60,7 +61,7 @@ class FinanceService {
           'رصيد محفظة ($walletName) غير كافي.\nالمطلوب: $amount | المتاح: $currentWalletBalance');
       }
 
-      CashState.instance.withdrawFromWallet(walletName, amount);
+      if (!dryRun) CashState.instance.withdrawFromWallet(walletName, amount);
       return FinanceResult(true, 'تم خصم المبلغ من المحفظة');
     }
 

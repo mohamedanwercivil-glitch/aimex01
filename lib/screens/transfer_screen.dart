@@ -1,4 +1,5 @@
 import 'package:aimex/services/toast_service.dart';
+import 'package:aimex/services/logger_service.dart';
 import 'package:aimex/widgets/selectable_text_field.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -29,6 +30,7 @@ class _TransferScreenState extends State<TransferScreen> {
   @override
   void initState() {
     super.initState();
+    LoggerService.userAction('فتح شاشة التحويلات المالية', {'تعديل': widget.editTransferId != null});
     if (widget.editTransferId != null) {
       _loadTransferForEdit(widget.editTransferId!);
     } else {
@@ -40,27 +42,29 @@ class _TransferScreenState extends State<TransferScreen> {
   }
 
   void _loadTransferForEdit(String id) {
-    final record = DayRecordsStore.getAll().firstWhere((r) => r['id'] == id || r['invoiceId'] == id);
-    setState(() {
-      fromBox = record['from'];
-      toBox = record['to'];
-      amountController.text = (record['amount'] ?? 0).toString();
-      feeController.text = (record['fee'] ?? 0).toString();
-    });
+    try {
+      final record = DayRecordsStore.getAll().firstWhere((r) => r['id'] == id || r['invoiceId'] == id);
+      setState(() {
+        fromBox = record['from'];
+        toBox = record['to'];
+        amountController.text = (record['amount'] ?? 0).toString();
+        feeController.text = (record['fee'] ?? 0).toString();
+      });
+      LoggerService.logicEffect('تم تحميل بيانات التحويل للتعديل', {'id': id, 'من': fromBox, 'إلى': toBox});
+    } catch (e) {
+      LoggerService.error('فشل تحميل بيانات التحويل للتعديل', error: e);
+    }
   }
 
   void _updateFee() {
     if (widget.editTransferId != null) return; 
     
-    // حساب تلقائي 1% فقط عند التحويل من محفظة إلى نقدي (المنطق القديم)
     if (fromBox != null && fromBox != 'نقدي' && toBox == 'نقدي') {
       final amount = double.tryParse(amountController.text) ?? 0;
       final fee = amount * 0.01;
       feeController.text = fee.toStringAsFixed(2);
     } 
-    // عند التحويل من نقدي إلى محفظة، نترك الحقل فارغاً للكتابة اليدوية ولا نمسحه عند تغيير المبلغ
     else if (fromBox == 'نقدي' && toBox != null && toBox != 'نقدي') {
-      // لا تفعل شيئاً، اسمح للمستخدم بالكتابة اليدوية
     }
     else {
       feeController.clear();
@@ -77,6 +81,7 @@ class _TransferScreenState extends State<TransferScreen> {
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
           TextButton(
             onPressed: () {
+              LoggerService.userAction('حذف عملية تحويل نهائياً', {'id': id});
               DayRecordsStore.reverseInvoiceEffects(id);
               Navigator.pop(context); 
               if (widget.editTransferId != null) Navigator.pop(context);
@@ -107,6 +112,8 @@ class _TransferScreenState extends State<TransferScreen> {
     final amount = double.tryParse(amountController.text) ?? 0;
     final fee = double.tryParse(feeController.text) ?? 0;
 
+    LoggerService.userAction('ضغط زر تنفيذ التحويل', {'من': fromBox, 'إلى': toBox, 'مبلغ': amount, 'رسوم': fee});
+
     if (fromBox == null || toBox == null || amount <= 0) {
       ToastService.show('اكمل البيانات');
       return;
@@ -120,7 +127,11 @@ class _TransferScreenState extends State<TransferScreen> {
     setState(() => _isSaving = true);
 
     try {
+      double balanceFromBefore = CashState.instance.getBalance(fromBox!);
+      double balanceToBefore = CashState.instance.getBalance(toBox!);
+
       if (widget.editTransferId != null) {
+        LoggerService.logicEffect('تعديل تحويل: عكس الأثر القديم', {'id': widget.editTransferId});
         DayRecordsStore.reverseInvoiceEffects(widget.editTransferId!);
       }
 
@@ -131,6 +142,7 @@ class _TransferScreenState extends State<TransferScreen> {
       );
 
       if (!success) {
+        LoggerService.warn('فشل عملية التحويل: رصيد غير كافٍ في $fromBox');
         ToastService.show('رصيد غير كافي أو خطأ في البيانات');
         setState(() => _isSaving = false);
         return;
@@ -142,6 +154,7 @@ class _TransferScreenState extends State<TransferScreen> {
         } else {
           CashState.instance.withdrawFromWallet(fromBox!, fee);
         }
+        LoggerService.logicEffect('تم خصم رسوم التحويل', {'القيمة': fee});
       }
 
       const uuid = Uuid();
@@ -157,6 +170,9 @@ class _TransferScreenState extends State<TransferScreen> {
         'date': DateTime.now().toString(),
       });
 
+      LoggerService.stateChange('رصيد المصدر ($fromBox)', balanceFromBefore, CashState.instance.getBalance(fromBox!));
+      LoggerService.stateChange('رصيد الوجهة ($toBox)', balanceToBefore, CashState.instance.getBalance(toBox!));
+
       ToastService.show(widget.editTransferId != null ? 'تم تعديل التحويل' : 'تم تنفيذ التحويل بنجاح');
       
       if (widget.editTransferId != null) {
@@ -171,7 +187,8 @@ class _TransferScreenState extends State<TransferScreen> {
         });
         _fromBoxFocusNode.requestFocus();
       }
-    } catch (e) {
+    } catch (e, stack) {
+      LoggerService.error('خطأ قاتل أثناء التحويل المالي', error: e, stackTrace: stack);
       ToastService.show('حدث خطأ أثناء التحويل');
       setState(() => _isSaving = false);
     }
@@ -180,10 +197,8 @@ class _TransferScreenState extends State<TransferScreen> {
   @override
   Widget build(BuildContext context) {
     final boxes = CashState.instance.allBoxes;
-    // يظهر الحقل عند اختيار الجهتين
     final showFeeField = fromBox != null && toBox != null;
 
-    // جلب تحويلات اليوم فقط
     final todayTransfers = DayRecordsStore.getAll()
         .where((r) => r['type'] == 'transfer')
         .toList()
@@ -214,6 +229,7 @@ class _TransferScreenState extends State<TransferScreen> {
                   items: boxes.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
                   onChanged: _isSaving ? null : (value) {
                     setState(() { fromBox = value; _updateFee(); });
+                    LoggerService.userAction('تغيير جهة التحويل (من)', {'القيمة': value});
                     _toBoxFocusNode.requestFocus();
                   },
                 ),
@@ -225,6 +241,7 @@ class _TransferScreenState extends State<TransferScreen> {
                   items: boxes.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
                   onChanged: _isSaving ? null : (value) {
                     setState(() { toBox = value; _updateFee(); });
+                    LoggerService.userAction('تغيير جهة التحويل (إلى)', {'القيمة': value});
                     _amountFocusNode.requestFocus();
                   },
                 ),
@@ -277,7 +294,8 @@ class _TransferScreenState extends State<TransferScreen> {
               itemCount: todayTransfers.length,
               itemBuilder: (context, index) {
                 final transfer = todayTransfers[index];
-                final time = DateFormat('hh:mm a').format(DateTime.parse(transfer['date'] ?? transfer['time']));
+                final dateVal = transfer['date'] ?? transfer['time'];
+                final time = dateVal != null ? DateFormat('hh:mm a').format(DateTime.parse(dateVal)) : '';
                 return Card(
                   margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                   child: ListTile(
@@ -290,7 +308,10 @@ class _TransferScreenState extends State<TransferScreen> {
                       children: [
                         IconButton(
                           icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
-                          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => TransferScreen(editTransferId: transfer['id'] ?? transfer['invoiceId']))).then((_) => setState(() {})),
+                          onPressed: () {
+                            LoggerService.userAction('ضغط تعديل تحويل من السجل');
+                            Navigator.push(context, MaterialPageRoute(builder: (_) => TransferScreen(editTransferId: transfer['id'] ?? transfer['invoiceId']))).then((_) => setState(() {}));
+                          },
                         ),
                         IconButton(
                           icon: const Icon(Icons.delete, color: Colors.red, size: 20),

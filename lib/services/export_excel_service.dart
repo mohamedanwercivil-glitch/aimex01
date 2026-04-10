@@ -25,8 +25,8 @@ class ExportExcelService {
   }
 
   static Future<String> generateAllInvoicesZip() async {
-    final now = DateTime.now();
-    final reportDate = DateFormat('dd-MM-yyyy').format(now);
+    final dayStartTime = DayState.instance.dayStartTime ?? DateTime.now();
+    final reportDate = DateFormat('dd-MM-yyyy').format(dayStartTime);
     final tempDir = await getTemporaryDirectory();
     final targetPath = tempDir.path;
     final pdfDir = Directory('${tempDir.path}/daily_sales_pdfs');
@@ -48,8 +48,9 @@ class ExportExcelService {
     for (final invoiceId in salesByInvoice.keys) {
       final items = salesByInvoice[invoiceId]!;
       final first = items.first;
-      final invoiceNum = first['invoiceNumber'] ?? '0';
       final customer = first['customer'] ?? 'عميل';
+      final invoiceTime = first['time'] != null ? DateTime.parse(first['time']) : DateTime.now();
+      final dateStr = DateFormat('dd-MM-yyyy').format(invoiceTime);
 
       final saleItems = items.map((e) => SaleItem(
         name: e['item'],
@@ -58,20 +59,26 @@ class ExportExcelService {
         isReturn: e['isReturn'] ?? false,
       )).toList();
 
+      final primaryPaid = (first['paidAmount'] as num).toDouble();
+      final secondaryPaid = records
+          .where((r) => r['invoiceId'] == invoiceId && r['type'] == 'settlement')
+          .fold(0.0, (sum, r) => sum + (r['amount'] as num).toDouble());
+
       final pdfData = await PdfService.generateInvoice(
         customerName: customer,
         items: saleItems,
         subtotal: (first['invoiceTotal'] as num).toDouble() + (first['discount'] as num).toDouble(),
         discount: (first['discount'] as num).toDouble(),
         total: (first['invoiceTotal'] as num).toDouble(),
-        paidAmount: (first['paidAmount'] as num).toDouble(),
-        dueAmount: (first['dueAmount'] as num).toDouble(),
-        invoiceId: invoiceNum.toString(),
+        paidAmount: primaryPaid + secondaryPaid,
+        dueAmount: (first['invoiceTotal'] as num).toDouble() - (primaryPaid + secondaryPaid),
+        invoiceId: first['invoiceNumber']?.toString() ?? '0',
         previousBalance: 0,
         newBalance: 0, 
       );
 
-      final file = File('${pdfDir.path}/فاتورة_بيع_$invoiceNum.pdf');
+      // 🔥 تغيير اسم الملف ليكون: اسم العميل تاريخ اليوم
+      final file = File('${pdfDir.path}/${customer}_$dateStr.pdf');
       await file.writeAsBytes(pdfData);
     }
 
@@ -92,14 +99,20 @@ class ExportExcelService {
   }
 
   static Future<String> exportDay(String targetDirPath) async {
-    var now = DateTime.now();
-    String reportDate = DateFormat('dd-MM-yyyy hh_mm_a').format(now);
+    final dayStartTime = DayState.instance.dayStartTime ?? DateTime.now();
+    String reportDate = DateFormat('dd-MM-yyyy').format(dayStartTime);
     var excel = Excel.createExcel();
     var records = DayRecordsStore.getAll();
-    final dayStartTime = DayState.instance.dayStartTime;
     excel.delete('Sheet1');
 
-    // 1. الأصناف الجديدة
+    double getSecondaryAmount(String? invoiceId, String type) {
+      if (invoiceId == null) return 0.0;
+      return records
+          .where((r) => r['invoiceId'] == invoiceId && r['type'] == type)
+          .fold(0.0, (sum, r) => sum + (r['amount'] as num).toDouble());
+    }
+
+    // --- 1. الأصناف الجديدة ---
     var newItemsSheet = excel['الأصناف الجديدة'];
     newItemsSheet.appendRow(['اسم الصنف']);
     var newItems = InventoryStore.getNewItemsToday(dayStartTime);
@@ -107,15 +120,7 @@ class ExportExcelService {
       newItemsSheet.appendRow([item['name']]);
     }
 
-    // 2. العملاء الجدد
-    var newCustomersSheet = excel['العملاء الجدد'];
-    newCustomersSheet.appendRow(['اسم العميل']);
-    var newCustomers = CustomerStore.getNewCustomersToday(dayStartTime);
-    for (var name in newCustomers) {
-      newCustomersSheet.appendRow([name]);
-    }
-
-    // 3. الموردين الجدد
+    // --- 2. الموردين الجدد ---
     var newSuppliersSheet = excel['الموردين الجدد'];
     newSuppliersSheet.appendRow(['اسم المورد']);
     var newSuppliers = SupplierStore.getNewSuppliersToday(dayStartTime);
@@ -123,8 +128,37 @@ class ExportExcelService {
       newSuppliersSheet.appendRow([name]);
     }
 
-    // 4. المشتريات (الشيت التفصيلي)
-    var purchasesSheet = excel['المشتريات'];
+    // --- 3. التحويلات ---
+    var transfersSheet = excel['التحويلات'];
+    transfersSheet.appendRow(['من محفظة', 'إلى محفظة', 'المبلغ', 'مصاريف التحويل', 'الوقت']);
+    for (var r in records.where((e) => e['type'] == 'transfer')) {
+      transfersSheet.appendRow([
+        r['from'] ?? 'نقدي',
+        r['to'] ?? 'نقدي',
+        r['amount'],
+        r['fee'] ?? 0,
+        r['time']?.toString().split('T')[1].split('.')[0] ?? ''
+      ]);
+    }
+
+    // --- 4. سداد الموردين ---
+    var supplierSettlement = excel['سداد الموردين'];
+    supplierSettlement.appendRow(['المورد', 'المبلغ', 'الخزنة', 'ملاحظات']);
+    for (var r in records.where((e) => e['type'] == 'supplier_settlement')) {
+      bool skip = false;
+      if (r['invoiceId'] != null) {
+        final purRecordsForThis = records.where((e) => e['type'] == 'purchase' && e['invoiceId'] == r['invoiceId']);
+        if (purRecordsForThis.isNotEmpty) {
+          final pAmt = (purRecordsForThis.first['paidAmount'] as num).toDouble();
+          if (pAmt == 0) skip = true; 
+        }
+      }
+      if (!skip) supplierSettlement.appendRow([r['supplier'], r['amount'], r['wallet'], r['remarks'] ?? '']);
+    }
+
+    // --- 5. المشتريات أوتو ---
+    var purchaseAutoSheet = excel['المشتريات أوتو'];
+    purchaseAutoSheet.appendRow(['اسم مورد', 'اسم الصنف', 'الكميه', 'سعر الوحده', 'الخزنه', 'المدفوع', 'الخصم']);
     var purchaseRecords = records.where((e) => e['type'] == 'purchase').toList();
     final purchasesByInvoice = <dynamic, List<Map<String, dynamic>>>{};
     for (final record in purchaseRecords) {
@@ -133,18 +167,61 @@ class ExportExcelService {
       purchasesByInvoice[key]!.add(record);
     }
     for (final invoiceItems in purchasesByInvoice.values) {
+      final nonReturnItems = invoiceItems.where((item) => item['isReturn'] != true).toList();
+      if (nonReturnItems.isEmpty) continue;
+      final first = invoiceItems.first;
+      final invoiceId = first['invoiceId'];
+      for (var item in nonReturnItems) {
+        purchaseAutoSheet.appendRow([item['supplier'], item['item'], item['qty'], item['price'], '', '', '']);
+      }
+      final primaryPaid = (first['paidAmount'] as num).toDouble();
+      final secondaryPaid = getSecondaryAmount(invoiceId, 'supplier_settlement');
+      double displayPaid;
+      String displayWallet = "";
+      if (primaryPaid > 0 && secondaryPaid > 0) {
+        displayPaid = primaryPaid;
+        displayWallet = (first['paymentType'] == 'كاش') ? 'نقدي' : (first['wallet'] ?? '');
+      } else if (secondaryPaid > 0) {
+        displayPaid = secondaryPaid;
+        final secRecord = records.firstWhere((r) => r['invoiceId'] == invoiceId && r['type'] == 'supplier_settlement');
+        displayWallet = secRecord['wallet'] ?? 'نقدي';
+      } else {
+        displayPaid = primaryPaid;
+        String rawPT = first['paymentType'] ?? 'كاش';
+        displayWallet = rawPT == 'آجل' ? 'آجل' : (rawPT == 'كاش' ? 'نقدي' : (first['wallet'] ?? ''));
+      }
+      purchaseAutoSheet.appendRow(['', '', '', '', displayWallet, displayPaid, first['discount'] ?? 0]);
+    }
+
+    // --- 6. المشتريات (التفصيلي) ---
+    var purchasesSheet = excel['المشتريات'];
+    for (final invoiceItems in purchasesByInvoice.values) {
       if (invoiceItems.isEmpty) continue;
       final first = invoiceItems.first;
-      String rawPaymentType = first['paymentType'] ?? 'كاش';
-      String walletVal = rawPaymentType == 'كاش' ? 'كاش' : (rawPaymentType == 'تحويل' ? (first['wallet'] ?? '') : '');
+      final invoiceId = first['invoiceId'];
+      final primaryPaid = (first['paidAmount'] as num).toDouble();
+      final secondaryPaid = getSecondaryAmount(invoiceId, 'supplier_settlement');
+      final totalPaid = primaryPaid + secondaryPaid;
+
       purchasesSheet.appendRow(['رقم الفاتورة', first['invoiceNumber']]);
-      purchasesSheet.appendRow(['التاريخ', first['time']?.toString().split(' ')[0] ?? '']);
+      purchasesSheet.appendRow(['التاريخ', first['time']?.toString().split('T')[0] ?? '']);
       purchasesSheet.appendRow(['إسم المورد', first['supplier']]);
       purchasesSheet.appendRow(['إجمالي الفاتورة', (first['invoiceTotal'] as num).toDouble() + (first['discount'] as num).toDouble()]);
-      purchasesSheet.appendRow(['طريقة الدفع', rawPaymentType == 'كاش' ? 'نقدي' : rawPaymentType]);
-      purchasesSheet.appendRow(['الخزنة', walletVal]);
+      
+      if (primaryPaid > 0 || (primaryPaid == 0 && secondaryPaid == 0)) {
+        String ptLabel = (primaryPaid > 0 && secondaryPaid > 0) ? 'طريقه دفع 1' : 'طريقة الدفع';
+        purchasesSheet.appendRow([ptLabel, first['paymentType'] ?? 'كاش']);
+        purchasesSheet.appendRow(['الخزنة', first['wallet'] ?? 'نقدي']);
+        purchasesSheet.appendRow(['المبلغ المدفوع', primaryPaid]);
+      }
+      if (secondaryPaid > 0) {
+        final secRecord = records.firstWhere((r) => r['invoiceId'] == invoiceId && r['type'] == 'supplier_settlement');
+        purchasesSheet.appendRow(['طريقة دفع 2', 'تحويل/سداد']);
+        purchasesSheet.appendRow(['الخزنة 2', secRecord['wallet'] ?? 'نقدي']);
+        purchasesSheet.appendRow(['المبلغ المدفوع 2', secondaryPaid]);
+      }
+      purchasesSheet.appendRow(['إجمالي المدفوع', totalPaid]);
       purchasesSheet.appendRow(['الخصم', first['discount'] ?? 0]);
-      purchasesSheet.appendRow(['المبلغ المدفوع فعلياً', first['paidAmount']]);
       purchasesSheet.appendRow([]);
       purchasesSheet.appendRow(['الصنف', 'الكمية', 'سعر الوحدة', 'الإجمالي', 'الحالة']);
       for (var item in invoiceItems) {
@@ -153,7 +230,30 @@ class ExportExcelService {
       purchasesSheet.appendRow([]);
     }
 
-    // 5. المبيعات (الشيت التفصيلي)
+    // --- 7. العملاء الجدد ---
+    var newCustomersSheet = excel['العملاء الجدد'];
+    newCustomersSheet.appendRow(['اسم العميل']);
+    var newCustomers = CustomerStore.getNewCustomersToday(dayStartTime);
+    for (var name in newCustomers) {
+      newCustomersSheet.appendRow([name]);
+    }
+
+    // --- 8. سداد العملاء ---
+    var settlement = excel['سداد العملاء'];
+    settlement.appendRow(['العميل', 'المبلغ', 'المحفظة', 'ملاحظات']);
+    for (var r in records.where((e) => e['type'] == 'settlement')) {
+      bool skip = false;
+      if (r['invoiceId'] != null) {
+        final saleRecordsForThis = records.where((e) => e['type'] == 'sale' && e['invoiceId'] == r['invoiceId']);
+        if (saleRecordsForThis.isNotEmpty) {
+          final pAmt = (saleRecordsForThis.first['paidAmount'] as num).toDouble();
+          if (pAmt == 0) skip = true;
+        }
+      }
+      if (!skip) settlement.appendRow([r['customer'], r['amount'], r['wallet'], r['remarks'] ?? '']);
+    }
+
+    // --- 9. المبيعات (التفصيلي) ---
     var salesSheet = excel['المبيعات'];
     var salesRecords = records.where((e) => e['type'] == 'sale').toList();
     final salesByInvoice = <dynamic, List<Map<String, dynamic>>>{};
@@ -165,16 +265,30 @@ class ExportExcelService {
     for (final invoiceItems in salesByInvoice.values) {
       if (invoiceItems.isEmpty) continue;
       final first = invoiceItems.first;
-      String rawPaymentType = first['paymentType'] ?? 'كاش';
-      String walletVal = rawPaymentType == 'كاش' ? 'كاش' : (rawPaymentType == 'تحويل' ? (first['wallet'] ?? '') : '');
+      final invoiceId = first['invoiceId'];
+      final primaryPaid = (first['paidAmount'] as num).toDouble();
+      final secondaryPaid = getSecondaryAmount(invoiceId, 'settlement');
+      final totalPaid = primaryPaid + secondaryPaid;
+
       salesSheet.appendRow(['رقم الفاتورة', first['invoiceNumber']]);
-      salesSheet.appendRow(['التاريخ', first['time']?.toString().split(' ')[0] ?? '']);
+      salesSheet.appendRow(['التاريخ', first['time']?.toString().split('T')[0] ?? '']);
       salesSheet.appendRow(['إسم العميل', first['customer']]);
       salesSheet.appendRow(['إجمالي الفاتورة', (first['invoiceTotal'] as num).toDouble() + (first['discount'] as num).toDouble()]);
-      salesSheet.appendRow(['طريقة الدفع', rawPaymentType == 'كاش' ? 'نقدي' : rawPaymentType]);
-      salesSheet.appendRow(['الخزنة', walletVal]);
+      
+      if (primaryPaid > 0 || (primaryPaid == 0 && secondaryPaid == 0)) {
+        String ptLabel = (primaryPaid > 0 && secondaryPaid > 0) ? 'طريقه دفع 1' : 'طريقة الدفع';
+        salesSheet.appendRow([ptLabel, first['paymentType'] ?? 'كاش']);
+        salesSheet.appendRow(['الخزنة', first['wallet'] ?? 'نقدي']);
+        salesSheet.appendRow(['المبلغ المدفوع', primaryPaid]);
+      }
+      if (secondaryPaid > 0) {
+        final secRecord = records.firstWhere((r) => r['invoiceId'] == invoiceId && r['type'] == 'settlement');
+        salesSheet.appendRow(['طريقة دفع 2', 'تحويل/سداد']);
+        salesSheet.appendRow(['الخزنة 2', secRecord['wallet'] ?? 'نقدي']);
+        salesSheet.appendRow(['المبلغ المدفوع 2', secondaryPaid]);
+      }
+      salesSheet.appendRow(['إجمالي المدفوع', totalPaid]);
       salesSheet.appendRow(['الخصم', first['discount'] ?? 0]);
-      salesSheet.appendRow(['المبلغ المدفوع فعلياً', first['paidAmount']]);
       salesSheet.appendRow([]);
       salesSheet.appendRow(['الصنف', 'الكمية', 'سعر الوحدة', 'الإجمالي', 'الحالة']);
       for (var item in invoiceItems) {
@@ -183,167 +297,71 @@ class ExportExcelService {
       salesSheet.appendRow([]);
     }
 
-    // 6. سداد العملاء
-    var settlement = excel['سداد العملاء'];
-    settlement.appendRow(['العميل', 'المبلغ', 'المحفظة']);
-    for (var r in records.where((e) => e['type'] == 'settlement')) {
-      settlement.appendRow([r['customer'], r['amount'], r['wallet']]);
-    }
-
-    // 7. سداد الموردين
-    var supplierSettlement = excel['سداد الموردين'];
-    supplierSettlement.appendRow(['المورد', 'المبلغ', 'الخزنة']);
-    for (var r in records.where((e) => e['type'] == 'supplier_settlement')) {
-      supplierSettlement.appendRow([r['supplier'], r['amount'], r['wallet']]);
-    }
-
-    // 8. المسحوبات الشخصية
-    var withdrawSheet = excel['المسحوبات الشخصية'];
-    withdrawSheet.appendRow(['المبلغ', 'الشخص', 'البيان', 'الخزنة']);
-    for (var r in records.where((e) => e['type'] == 'withdraw')) {
-      withdrawSheet.appendRow([r['amount'], r['person'] ?? '', r['description'] ?? r['reason'] ?? '', r['source'] ?? r['wallet'] ?? 'نقدي']);
-    }
-
-    // 9. مصروفات الشغل
-    var expenses = excel['مصروفات الشغل'];
-    expenses.appendRow(['المبلغ', 'البيان', 'الخزنة']);
-    for (var r in records.where((e) => e['type'] == 'expense')) {
-      expenses.appendRow([r['amount'], r['description'], r['wallet']]);
-    }
-
-    // 🔥 شيت المرتجعات
-    var returnsSheet = excel['المرتجعات'];
-    returnsSheet.appendRow(['المورد/العميل', 'الصنف', 'الكمية', 'السعر', 'الإجمالي', 'النوع']);
-    for (var r in records.where((e) => (e['type'] == 'purchase' || e['type'] == 'sale' || e['type'] == 'sales_return') && e['isReturn'] == true)) {
-      returnsSheet.appendRow([r['supplier'] ?? r['customer'], r['item'], r['qty'], r['price'], r['total'], r['type'] == 'purchase' ? 'مرتجع شراء' : 'مرتجع بيع']);
-    }
-
-    // 🔥 شيت المشتريات أوتو (المطابق للصورة تماماً)
-    var purchaseAutoSheet = excel['المشتريات أوتو'];
-    purchaseAutoSheet.appendRow(['اسم مورد', 'اسم الصنف', 'الكميه', 'سعر الوحده', 'الخزنه', 'المدفوع', 'الخصم']);
-    for (final invoiceItems in purchasesByInvoice.values) {
-      final nonReturnItems = invoiceItems.where((item) => item['isReturn'] != true).toList();
-      if (nonReturnItems.isEmpty) continue;
-      final first = invoiceItems.first;
-      String rawPaymentType = first['paymentType'] ?? 'كاش';
-      String walletVal = rawPaymentType == 'آجل' ? 'آجل' : (rawPaymentType == 'كاش' ? 'نقدي' : (first['wallet'] ?? ''));
-      for (var item in nonReturnItems) {
-        purchaseAutoSheet.appendRow([item['supplier'], item['item'], item['qty'], item['price'], '', '', '']);
-      }
-      double paid = (first['paidAmount'] as num).toDouble();
-      double disc = (first['discount'] as num).toDouble();
-      if (paid != 0 || disc != 0 || rawPaymentType == 'آجل') {
-        purchaseAutoSheet.appendRow(['', '', '', '', walletVal, first['paidAmount'], first['discount'] ?? 0]);
-      }
-    }
-
-    // 🔥 شيت المبيعات أوتو (المطابق للصورة تماماً)
+    // --- 10. المبيعات أوتو ---
     var salesAutoSheet = excel['المبيعات أوتو'];
     salesAutoSheet.appendRow(['اسم عميل', 'اسم الصنف', 'الكميه', 'سعر الوحده', 'الخزنه', 'المدفوع', 'الخصم']);
     for (final invoiceItems in salesByInvoice.values) {
       final nonReturnItems = invoiceItems.where((item) => item['isReturn'] != true).toList();
       if (nonReturnItems.isEmpty) continue;
       final first = invoiceItems.first;
-      String rawPaymentType = first['paymentType'] ?? 'كاش';
-      String walletVal = rawPaymentType == 'آجل' ? 'آجل' : (rawPaymentType == 'كاش' ? 'نقدي' : (first['wallet'] ?? ''));
+      final invoiceId = first['invoiceId'];
       for (var item in nonReturnItems) {
         salesAutoSheet.appendRow([item['customer'], item['item'], item['qty'], item['price'], '', '', '']);
       }
-      double paid = (first['paidAmount'] as num).toDouble();
-      double disc = (first['discount'] as num).toDouble();
-      if (paid != 0 || disc != 0 || rawPaymentType == 'آجل') {
-        salesAutoSheet.appendRow(['', '', '', '', walletVal, first['paidAmount'], first['discount'] ?? 0]);
+      final primaryPaid = (first['paidAmount'] as num).toDouble();
+      final secondaryPaid = getSecondaryAmount(invoiceId, 'settlement');
+      double displayPaid;
+      String displayWallet = "";
+      if (primaryPaid > 0 && secondaryPaid > 0) {
+        displayPaid = primaryPaid;
+        displayWallet = (first['paymentType'] == 'كاش') ? 'نقدي' : (first['wallet'] ?? '');
+      } else if (secondaryPaid > 0) {
+        displayPaid = secondaryPaid;
+        final secRecord = records.firstWhere((r) => r['invoiceId'] == invoiceId && r['type'] == 'settlement');
+        displayWallet = secRecord['wallet'] ?? 'نقدي';
+      } else {
+        displayPaid = primaryPaid;
+        String rawPT = first['paymentType'] ?? 'كاش';
+        displayWallet = rawPT == 'آجل' ? 'آجل' : (rawPT == 'كاش' ? 'نقدي' : (first['wallet'] ?? ''));
       }
+      salesAutoSheet.appendRow(['', '', '', '', displayWallet, displayPaid, first['discount'] ?? 0]);
     }
 
-    // 🔥 10. ملخص اليوم (مطابق للصورة 100%)
+    // --- 11. المرتجعات ---
+    var returnsSheet = excel['المرتجعات'];
+    returnsSheet.appendRow(['المورد/العميل', 'الصنف', 'الكمية', 'السعر', 'الإجمالي', 'النوع']);
+    for (var r in records.where((e) => (e['type'] == 'purchase' || e['type'] == 'sale' || e['type'] == 'sales_return') && e['isReturn'] == true)) {
+      returnsSheet.appendRow([r['supplier'] ?? r['customer'], r['item'], r['qty'], r['price'], r['total'], r['type'] == 'purchase' ? 'مرتجع شراء' : 'مرتجع بيع']);
+    }
+
+    // --- 12. المسحوبات الشخصية ---
+    var withdrawSheet = excel['المسحوبات الشخصية'];
+    withdrawSheet.appendRow(['المبلغ', 'الشخص', 'البيان', 'الخزنة']);
+    for (var r in records.where((e) => e['type'] == 'withdraw')) {
+      withdrawSheet.appendRow([r['amount'], r['person'] ?? '', r['description'] ?? r['reason'] ?? '', r['source'] ?? r['wallet'] ?? 'نقدي']);
+    }
+
+    // --- 13. مصروفات الشغل ---
+    var expenses = excel['مصروفات الشغل'];
+    expenses.appendRow(['المبلغ', 'البيان', 'الخزنة']);
+    for (var r in records.where((e) => e['type'] == 'expense')) {
+      expenses.appendRow([r['amount'], r['description'], r['wallet']]);
+    }
+
+    // --- 14. ملخص اليوم ---
     var summarySheet = excel['ملخص اليوم'];
-    summarySheet.appendRow(['البيان', 'التفاصيل', 'المبلغ']);
-    
-    // --- بداية اليوم ---
-    double startTotal = CashState.instance.startOfDayCash + CashState.instance.startOfDayWallets.values.fold(0.0, (a, b) => a + b);
-    summarySheet.appendRow(['--- بداية اليوم ---', '', startTotal]);
-    summarySheet.appendRow(['', 'نقدي (كاش)', CashState.instance.startOfDayCash]);
-    for (var entry in CashState.instance.startOfDayWallets.entries) {
-      summarySheet.appendRow(['', entry.key, entry.value]);
-    }
-    summarySheet.appendRow([]);
+    final ds = DayState.instance;
+    summarySheet.appendRow(['البيان', 'القيمة']);
+    summarySheet.appendRow(['إجمالي المبيعات (صافي)', ds.totalSales]);
+    summarySheet.appendRow(['خصومات المبيعات', ds.totalSalesDiscount]);
+    summarySheet.appendRow(['إجمالي المشتريات (بضاعة)', ds.totalPurchases]);
+    summarySheet.appendRow(['خصومات المشتريات', ds.totalPurchaseDiscount]);
+    summarySheet.appendRow(['إجمالي المصروفات', ds.totalExpenses]);
+    summarySheet.appendRow(['صافي ربح اليوم (تقديري)', ds.netProfit]);
 
-    // --- المشتريات ---
-    double totalPurNet = purchasesByInvoice.values.fold(0.0, (sum, items) => sum + (items.first['invoiceTotal'] as num).toDouble());
-    double totalPurDiscount = purchasesByInvoice.values.fold(0.0, (sum, items) => sum + (items.first['discount'] as num).toDouble());
-    double totalPurPaid = purchasesByInvoice.values.fold(0.0, (sum, items) => sum + (items.first['paidAmount'] as num).toDouble());
-    double totalPurGross = totalPurNet + totalPurDiscount;
-    double totalPurDue = totalPurNet - totalPurPaid;
-    
-    summarySheet.appendRow(['--- المشتريات ---']);
-    summarySheet.appendRow(['إجمالي قيمة المشتريات', '', totalPurGross]);
-    summarySheet.appendRow(['إجمالي ما تم دفعه', '', totalPurPaid]);
-    summarySheet.appendRow(['إجمالي الخصم', '', totalPurDiscount]);
-    summarySheet.appendRow(['المتبقي علينا (آجل من مشتريات اليوم)', '', totalPurDue]);
-    
-    // تفصيل الدفع من الخزائن في المشتريات
-    Map<String, double> purPaidByWallet = {'كاش': 0.0};
-    for (var w in CashState.instance.wallets.keys) { purPaidByWallet[w] = 0.0; }
-    for (var inv in purchasesByInvoice.values) {
-      String w = inv.first['wallet'] == 'نقدي' || inv.first['wallet'] == '' ? 'كاش' : inv.first['wallet'];
-      purPaidByWallet[w] = (purPaidByWallet[w] ?? 0.0) + (inv.first['paidAmount'] as num).toDouble();
-    }
-    purPaidByWallet.forEach((name, val) {
-      if (val != 0) summarySheet.appendRow(['', 'دفع من $name', val]);
-    });
-    summarySheet.appendRow([]);
-
-    // --- المبيعات ---
-    double totalSaleNet = salesByInvoice.values.fold(0.0, (sum, items) => sum + (items.first['invoiceTotal'] as num).toDouble());
-    double totalSaleDiscount = salesByInvoice.values.fold(0.0, (sum, items) => sum + (items.first['discount'] as num).toDouble());
-    double totalSalePaid = salesByInvoice.values.fold(0.0, (sum, items) => sum + (items.first['paidAmount'] as num).toDouble());
-    double totalSaleGross = totalSaleNet + totalSaleDiscount;
-    double totalSaleDue = totalSaleNet - totalSalePaid;
-
-    summarySheet.appendRow(['--- المبيعات ---']);
-    summarySheet.appendRow(['إجمالي قيمة المبيعات', '', totalSaleGross]);
-    summarySheet.appendRow(['إجمالي ما تم استلامه', '', totalSalePaid]);
-    summarySheet.appendRow(['إجمالي الخصم', '', totalSaleDiscount]);
-    summarySheet.appendRow(['المتبقي لنا بره (آجل من مبيعات اليوم)', '', totalSaleDue]);
-    summarySheet.appendRow([]);
-
-    // --- المصروفات والمسحوبات ---
-    double totalExp = records.where((e) => e['type'] == 'expense').fold(0.0, (sum, e) => sum + (e['amount'] as num).toDouble());
-    double totalWithdraw = records.where((e) => e['type'] == 'withdraw').fold(0.0, (sum, e) => sum + (e['amount'] as num).toDouble());
-    summarySheet.appendRow(['--- المصروفات والمسحوبات ---']);
-    summarySheet.appendRow(['إجمالي المصروفات', '', totalExp]);
-    summarySheet.appendRow(['إجمالي المسحوبات الشخصية', '', totalWithdraw]);
-    summarySheet.appendRow([]);
-
-    // --- تحصيل ودفع مديونيات ---
-    double totalSettlement = records.where((e) => e['type'] == 'settlement').fold(0.0, (sum, e) => sum + (e['amount'] as num).toDouble());
-    double totalSupplierSettlement = records.where((e) => e['type'] == 'supplier_settlement').fold(0.0, (sum, e) => sum + (e['amount'] as num).toDouble());
-    summarySheet.appendRow(['--- تحصيل ودفع مديونيات سابقة ---']);
-    summarySheet.appendRow(['إجمالي تحصيل من عملاء (سداد)', '', totalSettlement]);
-    summarySheet.appendRow(['إجمالي دفع لموردين (سداد)', '', totalSupplierSettlement]);
-    summarySheet.appendRow([]);
-
-    // --- ملخص تغير المديونيات ---
-    summarySheet.appendRow(['--- ملخص تغير المديونيات اليوم ---']);
-    summarySheet.appendRow(['زيادة ديون الموردين (مشتريات آجل)', '', totalPurDue]);
-    summarySheet.appendRow(['نقص ديون الموردين (سداد موردين)', '', totalSupplierSettlement]);
-    summarySheet.appendRow(['صافي التغير في حسابات الموردين', '', totalPurDue - totalSupplierSettlement]);
-    summarySheet.appendRow(['زيادة ديون العملاء (مبيعات آجل)', '', totalSaleDue]);
-    summarySheet.appendRow(['نقص ديون العملاء (سداد عملاء)', '', totalSettlement]);
-    summarySheet.appendRow(['صافي التغير في حسابات العملاء', '', totalSaleDue - totalSettlement]);
-    summarySheet.appendRow([]);
-
-    // --- نهاية اليوم ---
-    double endTotal = CashState.instance.cash + CashState.instance.wallets.values.fold(0.0, (a, b) => a + b);
-    summarySheet.appendRow(['--- السيولة المتوفرة نهاية اليوم ---', '', endTotal]);
-    summarySheet.appendRow(['', 'نقدي (كاش)', CashState.instance.cash]);
-    for (var entry in CashState.instance.wallets.entries) {
-      summarySheet.appendRow(['', entry.key, entry.value]);
-    }
-
-    final fileBytes = excel.save();
-    final file = File('$targetDirPath/تقرير_$reportDate.xlsx');
+    final fileBytes = excel.encode();
+    final fileName = "تقرير_يومي_$reportDate.xlsx";
+    final file = File("$targetDirPath/$fileName");
     await file.writeAsBytes(fileBytes!);
     return file.path;
   }

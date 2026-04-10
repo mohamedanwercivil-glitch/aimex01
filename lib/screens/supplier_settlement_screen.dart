@@ -24,9 +24,12 @@ class _SupplierSettlementScreenState
 
   final supplierController = TextEditingController();
   final amountController = TextEditingController();
+  final remarksController = TextEditingController();
+  
   String? selectedWallet;
   final _supplierFocusNode = FocusNode();
   final _amountFocusNode = FocusNode();
+  final _remarksFocusNode = FocusNode();
   bool _isSaving = false;
 
   @override
@@ -45,6 +48,7 @@ class _SupplierSettlementScreenState
       supplierController.text = record['supplier'] ?? '';
       amountController.text = (record['amount'] ?? 0).toString();
       selectedWallet = record['wallet'] ?? 'نقدي';
+      remarksController.text = record['remarks'] ?? '';
     });
   }
 
@@ -75,8 +79,10 @@ class _SupplierSettlementScreenState
   void dispose() {
     supplierController.dispose();
     amountController.dispose();
+    remarksController.dispose();
     _supplierFocusNode.dispose();
     _amountFocusNode.dispose();
+    _remarksFocusNode.dispose();
     super.dispose();
   }
 
@@ -88,6 +94,7 @@ class _SupplierSettlementScreenState
 
     final supplier = supplierController.text.trim();
     final amount = double.tryParse(amountController.text) ?? 0;
+    final remarks = remarksController.text.trim();
 
     if (supplier.isEmpty || amount <= 0) {
       ToastService.show('ادخل اسم المورد ومبلغ صحيح');
@@ -126,6 +133,7 @@ class _SupplierSettlementScreenState
         'amount': amount,
         'wallet': selectedWallet ?? 'نقدي',
         'date': DateTime.now().toString(),
+        'remarks': remarks,
       });
 
       ToastService.show(widget.editSettlementId != null ? 'تم تعديل السداد' : 'تم تسجيل سداد المورد وتحديث الحساب');
@@ -136,6 +144,7 @@ class _SupplierSettlementScreenState
         setState(() {
           amountController.clear();
           supplierController.clear();
+          remarksController.clear();
           _isSaving = false;
         });
         _supplierFocusNode.requestFocus();
@@ -175,14 +184,33 @@ class _SupplierSettlementScreenState
                   textInputAction: TextInputAction.next,
                 ),
                 const SizedBox(height: 12),
-                SelectableTextField(
-                  enabled: !_isSaving,
-                  controller: amountController,
-                  focusNode: _amountFocusNode,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  labelText: 'المبلغ المدفوع',
-                  textInputAction: TextInputAction.done,
-                  onSubmitted: (_) => _saveSettlement(),
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: SelectableTextField(
+                        enabled: !_isSaving,
+                        controller: amountController,
+                        focusNode: _amountFocusNode,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        labelText: 'المبلغ المدفوع',
+                        textInputAction: TextInputAction.next,
+                        onSubmitted: (_) => _remarksFocusNode.requestFocus(),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 3,
+                      child: SelectableTextField(
+                        enabled: !_isSaving,
+                        controller: remarksController,
+                        focusNode: _remarksFocusNode,
+                        labelText: 'ملاحظات',
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) => _saveSettlement(),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
@@ -216,6 +244,7 @@ class _SupplierSettlementScreenState
                 final time = DateFormat('hh:mm a').format(DateTime.parse(settlement['date'] ?? settlement['time']));
                 final bool isBeingEdited = widget.editSettlementId != null && 
                     (settlement['id'] == widget.editSettlementId || settlement['invoiceId'] == widget.editSettlementId);
+                final remarks = settlement['remarks'] ?? '';
 
                 return Card(
                   margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -223,11 +252,18 @@ class _SupplierSettlementScreenState
                     dense: true,
                     leading: const Icon(Icons.payments, color: Colors.indigo),
                     title: Text('${settlement['supplier']}'),
-                    subtitle: Text('المبلغ: ${settlement['amount']} | الخزنة: ${settlement['wallet']} | $time'),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('المبلغ: ${settlement['amount']} | الخزنة: ${settlement['wallet']} | $time'),
+                        if (remarks.isNotEmpty)
+                          Text('ملاحظة: $remarks', style: const TextStyle(color: Colors.blueGrey, fontStyle: FontStyle.italic)),
+                      ],
+                    ),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (!isBeingEdited) // 🔥 تم إضافة الشرط هنا لتختفي الأيقونة أثناء التعديل
+                        if (!isBeingEdited)
                           IconButton(
                             icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
                             onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SupplierSettlementScreen(editSettlementId: settlement['id'] ?? settlement['invoiceId']))).then((_) => setState(() {})),

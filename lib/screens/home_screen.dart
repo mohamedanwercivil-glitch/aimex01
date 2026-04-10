@@ -15,10 +15,49 @@ import 'settlement_screen.dart';
 import 'supplier_settlement_screen.dart';
 import 'settings/import_screen.dart';
 import 'account_statement_screen.dart';
-import '../services/logger_service.dart'; // 🔥 استيراد اللوجر
+import '../services/logger_service.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
+
+  void _showEndDayConfirmation(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.orange),
+            SizedBox(width: 10),
+            Text('تأكيد إنهاء اليوم'),
+          ],
+        ),
+        content: const Text(
+          'هل النقدية (الكاش) والتحويلات مضبوطة لهذا اليوم؟\n\n'
+          'إذا كانت هناك مصروفات أو سحوبات ناقصة، يرجى إضافتها قبل الإغلاق.',
+          style: TextStyle(fontSize: 16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              LoggerService.userAction('إلغاء إنهاء اليوم (النقدية غير مضبوطة)');
+              Navigator.pop(context);
+            },
+            child: const Text('غير مضبوطة (رجوع)', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
+            onPressed: () {
+              LoggerService.userAction('تأكيد إنهاء اليوم (النقدية مضبوطة)');
+              Navigator.pop(context);
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const EndDayScreen()));
+            },
+            child: const Text('مضبوطة (إتمام الإغلاق)'),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,16 +66,14 @@ class HomeScreen extends StatelessWidget {
         final dayStarted = dayState.dayStarted;
 
         return BaseScaffold(
-          title: '', // تم إزالة العنوان
+          title: '',
           body: LayoutBuilder(
             builder: (context, constraints) {
-              // تصميم جديد لواجهة مرنة
               return SingleChildScrollView(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
                   child: Column(
                     children: [
-                      // زر بداية اليوم بالعرض الكامل
                       if (!dayStarted)
                         _buildFullWidthButton(
                           context,
@@ -47,7 +84,6 @@ class HomeScreen extends StatelessWidget {
                         ),
                       if (!dayStarted) const SizedBox(height: 16),
 
-                      // صف البيع والشراء
                       Row(
                         children: [
                           _buildHalfWidthCard(context, 'بيع / مرتجع', Icons.point_of_sale, Colors.green, const SalesScreen(), enabled: dayStarted),
@@ -57,7 +93,6 @@ class HomeScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 16),
 
-                      // صف فواتير البيع والشراء
                       Row(
                         children: [
                           _buildHalfWidthCard(context, 'فواتير البيع', Icons.description, Colors.blueGrey, const DailyInvoicesScreen()),
@@ -67,7 +102,6 @@ class HomeScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 16),
 
-                      // صف سداد العملاء والموردين
                       Row(
                         children: [
                           _buildHalfWidthCard(context, 'سداد العملاء', Icons.payments, Colors.indigo, const SettlementScreen(), enabled: dayStarted),
@@ -77,7 +111,6 @@ class HomeScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 16),
 
-                      // صف المسحوبات والمصروفات
                       Row(
                         children: [
                            _buildHalfWidthCard(context, 'مسحوبات شخصية', Icons.account_balance_wallet, Colors.orange, const WithdrawScreen(), enabled: dayStarted),
@@ -87,7 +120,6 @@ class HomeScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 16),
                       
-                      // الصف الأخير: كشف حساب وجرد
                       Row(
                         children: [
                           _buildHalfWidthCard(context, 'كشف حساب', Icons.account_balance, Colors.cyan.shade700, const AccountStatementScreen()),
@@ -97,12 +129,17 @@ class HomeScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 24),
 
-                      // زر إنهاء اليوم
                       if (dayStarted)
-                        _buildFullWidthButton(context, 'إنهاء اليوم', Icons.done_all, Colors.red.shade700, const EndDayScreen()),
+                        _buildFullWidthButton(
+                          context, 
+                          'إنهاء اليوم', 
+                          Icons.done_all, 
+                          Colors.red.shade700, 
+                          null, // لا نمرر شاشة لأننا سنفتح Dialog
+                          onTap: () => _showEndDayConfirmation(context),
+                        ),
                       const SizedBox(height: 12),
                       
-                      // أزرار التحكم الإضافية
                       Row(
                         children: [
                            Expanded(
@@ -168,7 +205,7 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildFullWidthButton(BuildContext context, String title, IconData icon, Color color, Widget screen, {bool enabled = true}) {
+  Widget _buildFullWidthButton(BuildContext context, String title, IconData icon, Color color, Widget? screen, {bool enabled = true, VoidCallback? onTap}) {
     return SizedBox(
       width: double.infinity,
       height: 60,
@@ -180,7 +217,7 @@ class HomeScreen extends StatelessWidget {
           elevation: 4,
         ),
         onPressed: enabled 
-            ? () => Navigator.push(context, MaterialPageRoute(builder: (_) => screen))
+            ? (onTap ?? () => Navigator.push(context, MaterialPageRoute(builder: (_) => screen!)))
             : null,
         icon: Icon(icon, size: 28),
         label: Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),

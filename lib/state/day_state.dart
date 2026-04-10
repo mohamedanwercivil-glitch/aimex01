@@ -17,6 +17,11 @@ class DayState extends ChangeNotifier {
   double cashStart = 0;
   double totalSales = 0;
   double totalExpenses = 0;
+  
+  // الحقول الجديدة للمشتريات والخصومات
+  double totalPurchases = 0; 
+  double totalPurchaseDiscount = 0;
+  double totalSalesDiscount = 0;
 
   DateTime? dayStartTime;
   DateTime? dayEndTime;
@@ -26,6 +31,10 @@ class DayState extends ChangeNotifier {
     cashStart = box.get('cashStart', defaultValue: 0.0);
     totalSales = box.get('totalSales', defaultValue: 0.0);
     totalExpenses = box.get('totalExpenses', defaultValue: 0.0);
+    
+    totalPurchases = box.get('totalPurchases', defaultValue: 0.0);
+    totalPurchaseDiscount = box.get('totalPurchaseDiscount', defaultValue: 0.0);
+    totalSalesDiscount = box.get('totalSalesDiscount', defaultValue: 0.0);
 
     final start = box.get('dayStartTime');
     final end = box.get('dayEndTime');
@@ -42,6 +51,10 @@ class DayState extends ChangeNotifier {
     box.put('cashStart', cashStart);
     box.put('totalSales', totalSales);
     box.put('totalExpenses', totalExpenses);
+    
+    box.put('totalPurchases', totalPurchases);
+    box.put('totalPurchaseDiscount', totalPurchaseDiscount);
+    box.put('totalSalesDiscount', totalSalesDiscount);
 
     if (dayStartTime != null) {
       box.put('dayStartTime', dayStartTime!.toIso8601String());
@@ -55,7 +68,6 @@ class DayState extends ChangeNotifier {
   }
 
   void startDay(double startCash) {
-    // 🔹 مسح بيانات اليوم السابق عند بدء يوم جديد
     DayRecordsStore.clear();
     ExportExcelService.clearDailyInvoices();
     
@@ -63,6 +75,9 @@ class DayState extends ChangeNotifier {
     cashStart = startCash;
     totalSales = 0;
     totalExpenses = 0;
+    totalPurchases = 0;
+    totalPurchaseDiscount = 0;
+    totalSalesDiscount = 0;
 
     dayStartTime = DateTime.now();
     dayEndTime = null;
@@ -72,8 +87,16 @@ class DayState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void addSale(double amount) {
+  void addSale(double amount, {double discount = 0}) {
     totalSales += amount;
+    totalSalesDiscount += discount;
+    _saveToStorage();
+    notifyListeners();
+  }
+
+  void addPurchase(double subtotal, {double discount = 0}) {
+    totalPurchases += subtotal;
+    totalPurchaseDiscount += discount;
     _saveToStorage();
     notifyListeners();
   }

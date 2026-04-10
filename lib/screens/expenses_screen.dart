@@ -1,4 +1,5 @@
 import 'package:aimex/services/toast_service.dart';
+import 'package:aimex/services/logger_service.dart';
 import 'package:aimex/widgets/selectable_text_field.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -28,6 +29,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   @override
   void initState() {
     super.initState();
+    LoggerService.userAction('فتح شاشة المصروفات', {'تعديل': widget.editExpenseId != null});
     if (widget.editExpenseId != null) {
       _loadExpenseForEdit(widget.editExpenseId!);
     } else {
@@ -36,12 +38,17 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   }
 
   void _loadExpenseForEdit(String id) {
-    final record = DayRecordsStore.getAll().firstWhere((r) => r['id'] == id || r['invoiceId'] == id);
-    setState(() {
-      amountController.text = (record['amount'] ?? 0).toString();
-      descriptionController.text = record['description'] ?? '';
-      selectedWallet = record['wallet'] ?? 'نقدي';
-    });
+    try {
+      final record = DayRecordsStore.getAll().firstWhere((r) => r['id'] == id || r['invoiceId'] == id);
+      setState(() {
+        amountController.text = (record['amount'] ?? 0).toString();
+        descriptionController.text = record['description'] ?? '';
+        selectedWallet = record['wallet'] ?? 'نقدي';
+      });
+      LoggerService.logicEffect('تم تحميل بيانات المصروف للتعديل', {'id': id, 'بيان': descriptionController.text});
+    } catch (e) {
+      LoggerService.error('فشل تحميل بيانات المصروف للتعديل', error: e);
+    }
   }
 
   void _deleteExpensePermanently(String id) {
@@ -54,6 +61,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
           TextButton(
             onPressed: () {
+              LoggerService.userAction('حذف مصروف نهائياً', {'id': id});
               DayRecordsStore.reverseInvoiceEffects(id);
               Navigator.pop(context); 
               if (widget.editExpenseId != null) Navigator.pop(context);
@@ -86,6 +94,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     final amount = double.tryParse(amountController.text) ?? 0;
     final description = descriptionController.text.trim();
 
+    LoggerService.userAction('ضغط حفظ مصروف', {'بيان': description, 'مبلغ': amount, 'خزنة': selectedWallet});
+
     if (amount <= 0 || description.isEmpty) {
       ToastService.show('ادخل مبلغ وبيان صحيح');
       return;
@@ -95,6 +105,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
     try {
       if (widget.editExpenseId != null) {
+        LoggerService.logicEffect('تعديل مصروف: عكس الأثر القديم', {'id': widget.editExpenseId});
         DayRecordsStore.reverseInvoiceEffects(widget.editExpenseId!);
       }
 
@@ -105,6 +116,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       );
 
       if (!result.success) {
+        LoggerService.warn('فشل خصم مبلغ المصروف: ${result.message}');
         ToastService.show(result.message);
         setState(() => _isSaving = false);
         return;
@@ -123,6 +135,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       });
 
       DayState.instance.addExpense(amount);
+      LoggerService.logicEffect('تم تسجيل المصروف وتحديث إحصائيات اليوم');
+      
       ToastService.show(widget.editExpenseId != null ? 'تم تعديل المصروف' : 'تم تسجيل المصروف');
 
       if (widget.editExpenseId != null) {
@@ -135,7 +149,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         });
         _amountFocusNode.requestFocus();
       }
-    } catch (e) {
+    } catch (e, stack) {
+      LoggerService.error('خطأ قاتل أثناء حفظ المصروف', error: e, stackTrace: stack);
       ToastService.show('حدث خطأ أثناء الحفظ');
       setState(() => _isSaving = false);
     }
@@ -177,14 +192,20 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                   focusNode: _descriptionFocusNode,
                   labelText: 'بيان المصروف',
                   textInputAction: TextInputAction.next,
-                  onSubmitted: (_) => FocusScope.of(context).nextFocus(),
+                  onSubmitted: (_) {
+                    LoggerService.userAction('إدخال بيان المصروف', {'القيمة': descriptionController.text});
+                    FocusScope.of(context).nextFocus();
+                  },
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   value: selectedWallet,
                   decoration: const InputDecoration(labelText: 'اختر الخزنة', border: OutlineInputBorder()),
                   items: wallets.map((wallet) => DropdownMenuItem(value: wallet, child: Text(wallet))).toList(),
-                  onChanged: _isSaving ? null : (value) => setState(() => selectedWallet = value),
+                  onChanged: _isSaving ? null : (value) {
+                    setState(() => selectedWallet = value);
+                    LoggerService.userAction('تغيير خزنة المصروف', {'الخزنة': value});
+                  },
                 ),
                 const SizedBox(height: 20),
                 SizedBox(
@@ -209,7 +230,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               itemCount: todayExpenses.length,
               itemBuilder: (context, index) {
                 final expense = todayExpenses[index];
-                final time = DateFormat('hh:mm a').format(DateTime.parse(expense['date'] ?? expense['time']));
+                final dateVal = expense['date'] ?? expense['time'];
+                final time = dateVal != null ? DateFormat('hh:mm a').format(DateTime.parse(dateVal)) : '';
                 return Card(
                   margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                   child: ListTile(
@@ -222,7 +244,10 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                       children: [
                         IconButton(
                           icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
-                          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ExpensesScreen(editExpenseId: expense['id'] ?? expense['invoiceId']))).then((_) => setState(() {})),
+                          onPressed: () {
+                            LoggerService.userAction('ضغط تعديل مصروف من السجل');
+                            Navigator.push(context, MaterialPageRoute(builder: (_) => ExpensesScreen(editExpenseId: expense['id'] ?? expense['invoiceId']))).then((_) => setState(() {}));
+                          },
                         ),
                         IconButton(
                           icon: const Icon(Icons.delete, color: Colors.red, size: 20),

@@ -55,6 +55,11 @@ class CashState extends ChangeNotifier {
     return ['نقدي', ...wallets.keys];
   }
 
+  double getBalance(String boxName) {
+    if (boxName == 'نقدي') return cash;
+    return wallets[boxName] ?? 0.0;
+  }
+
   double get totalMoney {
     double total = cash;
     for (var value in wallets.values) {
