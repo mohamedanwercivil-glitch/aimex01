@@ -12,9 +12,10 @@ class FinanceService {
     required double amount,
     required String paymentType,
     String? walletName,
+    String? reason,
   }) {
     if (paymentType == 'كاش' || paymentType == 'نقدي') {
-      CashState.instance.depositCash(amount);
+      CashState.instance.depositCash(amount, reason ?? 'إيداع نقدي');
       return FinanceResult(true, 'تم إضافة المبلغ للكاش');
     }
 
@@ -24,7 +25,7 @@ class FinanceService {
         return FinanceResult(false, 'المحفظة غير موجودة');
       }
 
-      CashState.instance.depositToWallet(walletName, amount);
+      CashState.instance.depositToWallet(walletName, amount, reason ?? 'إيداع للمحفظة');
       return FinanceResult(true, 'تم إضافة المبلغ للمحفظة');
     }
 
@@ -35,8 +36,9 @@ class FinanceService {
     required double amount,
     required String paymentType,
     String? walletName,
-    bool allowNegative = false, // 🔥 استثناء لعمليات التصحيح (Reverse)
-    bool dryRun = false,        // 🔥 للتحقق من الرصيد فقط بدون خصم فعلي
+    bool allowNegative = false,
+    bool dryRun = false,
+    String? reason,
   }) {
     if (paymentType == 'كاش' || paymentType == 'نقدي') {
       final currentCash = CashState.instance.cash;
@@ -45,7 +47,7 @@ class FinanceService {
           'عذراً، الرصيد النقدي غير كافي.\nالمطلوب: $amount | المتاح: $currentCash');
       }
 
-      if (!dryRun) CashState.instance.withdrawCash(amount);
+      if (!dryRun) CashState.instance.withdrawCash(amount, reason ?? 'سحب نقدي');
       return FinanceResult(true, 'تم خصم المبلغ من الكاش');
     }
 
@@ -61,7 +63,7 @@ class FinanceService {
           'رصيد محفظة ($walletName) غير كافي.\nالمطلوب: $amount | المتاح: $currentWalletBalance');
       }
 
-      if (!dryRun) CashState.instance.withdrawFromWallet(walletName, amount);
+      if (!dryRun) CashState.instance.withdrawFromWallet(walletName, amount, reason ?? 'سحب من المحفظة');
       return FinanceResult(true, 'تم خصم المبلغ من المحفظة');
     }
 

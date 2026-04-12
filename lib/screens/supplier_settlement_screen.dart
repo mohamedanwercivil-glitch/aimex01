@@ -1,6 +1,7 @@
 import 'package:aimex/widgets/searchable_dropdown_field.dart';
 import 'package:aimex/services/toast_service.dart';
 import 'package:aimex/widgets/selectable_text_field.dart';
+import 'package:aimex/services/logger_service.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
@@ -31,6 +32,7 @@ class _SupplierSettlementScreenState
   final _amountFocusNode = FocusNode();
   final _remarksFocusNode = FocusNode();
   bool _isSaving = false;
+  double _currentBalance = 0.0;
 
   @override
   void initState() {
@@ -39,6 +41,20 @@ class _SupplierSettlementScreenState
       _loadSettlementForEdit(widget.editSettlementId!);
     } else {
       selectedWallet = 'نقدي';
+    }
+    supplierController.addListener(_updateBalance);
+  }
+
+  void _updateBalance() {
+    final name = supplierController.text.trim();
+    if (name.isNotEmpty) {
+      setState(() {
+        _currentBalance = SupplierStore.getBalance(name);
+      });
+    } else {
+      setState(() {
+        _currentBalance = 0.0;
+      });
     }
   }
 
@@ -57,7 +73,7 @@ class _SupplierSettlementScreenState
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('حذف عملية السداد نهائياً؟'),
-        content: const Text('سيتم إلغاء أثر السداد من حساب المورد واسترداد المبلغ للخزنة. هل أنت متأكد؟'),
+        content: const Text('سيتم إلغاء أثر العملية من حساب المورد واسترداد/خصم المبلغ من الخزنة. هل أنت متأكد؟'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
           TextButton(
@@ -66,7 +82,7 @@ class _SupplierSettlementScreenState
               Navigator.pop(context); 
               if (widget.editSettlementId != null) Navigator.pop(context);
               setState(() {});
-              ToastService.show('تم حذف السداد وعكس أثره');
+              ToastService.show('تم حذف العملية وعكس أثرها');
             },
             child: const Text('تأكيد الحذف', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
           ),
@@ -96,7 +112,7 @@ class _SupplierSettlementScreenState
     final amount = double.tryParse(amountController.text) ?? 0;
     final remarks = remarksController.text.trim();
 
-    if (supplier.isEmpty || amount <= 0) {
+    if (supplier.isEmpty || amount == 0) {
       ToastService.show('ادخل اسم المورد ومبلغ صحيح');
       return;
     }
@@ -108,11 +124,25 @@ class _SupplierSettlementScreenState
         DayRecordsStore.reverseInvoiceEffects(widget.editSettlementId!);
       }
 
-      final result = FinanceService.withdraw(
-        amount: amount,
-        paymentType: selectedWallet == 'نقدي' ? 'كاش' : 'تحويل',
-        walletName: selectedWallet == 'نقدي' ? null : selectedWallet,
-      );
+      FinanceResult result;
+      // إذا كان المبلغ موجب: أنت تدفع للمورد (سحب من الخزنة)
+      // إذا كان المبلغ سالب: المورد يدفع لك (إيداع في الخزنة)
+      if (amount > 0) {
+        result = FinanceService.withdraw(
+          amount: amount,
+          paymentType: selectedWallet == 'نقدي' ? 'كاش' : 'تحويل',
+          walletName: selectedWallet == 'نقدي' ? null : selectedWallet,
+          reason: "سداد لمورد: $supplier",
+          allowNegative: true,
+        );
+      } else {
+        result = FinanceService.deposit(
+          amount: amount.abs(),
+          paymentType: selectedWallet == 'نقدي' ? 'كاش' : 'تحويل',
+          walletName: selectedWallet == 'نقدي' ? null : selectedWallet,
+          reason: "تحصيل من مورد: $supplier"
+        );
+      }
 
       if (!result.success) {
         ToastService.show(result.message);
@@ -136,7 +166,7 @@ class _SupplierSettlementScreenState
         'remarks': remarks,
       });
 
-      ToastService.show(widget.editSettlementId != null ? 'تم تعديل السداد' : 'تم تسجيل سداد المورد وتحديث الحساب');
+      ToastService.show(widget.editSettlementId != null ? 'تم تعديل العملية بنجاح' : 'تم تسجيل العملية وتحديث الحساب');
 
       if (widget.editSettlementId != null) {
         Navigator.pop(context);
@@ -164,9 +194,20 @@ class _SupplierSettlementScreenState
         .reversed
         .toList();
 
+    String balanceText = "";
+    if (supplierController.text.trim().isNotEmpty) {
+      if (_currentBalance > 0) {
+        balanceText = " (له: ${_currentBalance.toStringAsFixed(2)})";
+      } else if (_currentBalance < 0) {
+        balanceText = " (عليه: ${_currentBalance.abs().toStringAsFixed(2)})";
+      } else {
+        balanceText = " (رصيده صفر)";
+      }
+    }
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.editSettlementId != null ? 'تعديل سداد مورد' : 'سداد الموردين'),
+        title: Text('${widget.editSettlementId != null ? "تعديل عملية" : "سداد الموردين"}$balanceText'),
       ),
       body: Column(
         children: [
@@ -192,8 +233,8 @@ class _SupplierSettlementScreenState
                         enabled: !_isSaving,
                         controller: amountController,
                         focusNode: _amountFocusNode,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        labelText: 'المبلغ المدفوع',
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                        labelText: 'المبلغ',
                         textInputAction: TextInputAction.next,
                         onSubmitted: (_) => _remarksFocusNode.requestFocus(),
                       ),
@@ -225,7 +266,7 @@ class _SupplierSettlementScreenState
                   height: 50,
                   child: ElevatedButton(
                     onPressed: _isSaving ? null : _saveSettlement,
-                    child: _isSaving ? const CircularProgressIndicator(color: Colors.white) : const Text('حفظ السداد'),
+                    child: _isSaving ? const CircularProgressIndicator(color: Colors.white) : const Text('حفظ العملية'),
                   ),
                 ),
               ],
@@ -234,7 +275,7 @@ class _SupplierSettlementScreenState
           const Divider(thickness: 2),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
-            child: Text('سجل سدادات الموردين اليوم', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            child: Text('سجل حركات سداد الموردين اليوم', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           ),
           Expanded(
             child: ListView.builder(
@@ -245,17 +286,21 @@ class _SupplierSettlementScreenState
                 final bool isBeingEdited = widget.editSettlementId != null && 
                     (settlement['id'] == widget.editSettlementId || settlement['invoiceId'] == widget.editSettlementId);
                 final remarks = settlement['remarks'] ?? '';
+                final amt = (settlement['amount'] as num).toDouble();
 
                 return Card(
                   margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                   child: ListTile(
                     dense: true,
-                    leading: const Icon(Icons.payments, color: Colors.indigo),
+                    leading: Icon(
+                      amt > 0 ? Icons.payments : Icons.price_check,
+                      color: amt > 0 ? Colors.indigo : Colors.green,
+                    ),
                     title: Text('${settlement['supplier']}'),
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('المبلغ: ${settlement['amount']} | الخزنة: ${settlement['wallet']} | $time'),
+                        Text('المبلغ: $amt | الخزنة: ${settlement['wallet']} | $time'),
                         if (remarks.isNotEmpty)
                           Text('ملاحظة: $remarks', style: const TextStyle(color: Colors.blueGrey, fontStyle: FontStyle.italic)),
                       ],

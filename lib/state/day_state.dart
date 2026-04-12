@@ -8,7 +8,7 @@ import '../services/export_excel_service.dart';
 class DayState extends ChangeNotifier {
   static final DayState instance = DayState._internal();
   DayState._internal() {
-    _loadFromStorage();
+    loadFromStorage();
   }
 
   final Box box = Hive.box('dayBox');
@@ -26,15 +26,15 @@ class DayState extends ChangeNotifier {
   DateTime? dayStartTime;
   DateTime? dayEndTime;
 
-  Future<void> _loadFromStorage() async {
+  Future<void> loadFromStorage() async {
     dayStarted = box.get('dayStarted', defaultValue: false);
-    cashStart = box.get('cashStart', defaultValue: 0.0);
-    totalSales = box.get('totalSales', defaultValue: 0.0);
-    totalExpenses = box.get('totalExpenses', defaultValue: 0.0);
+    cashStart = (box.get('cashStart', defaultValue: 0.0) as num).toDouble();
+    totalSales = (box.get('totalSales', defaultValue: 0.0) as num).toDouble();
+    totalExpenses = (box.get('totalExpenses', defaultValue: 0.0) as num).toDouble();
     
-    totalPurchases = box.get('totalPurchases', defaultValue: 0.0);
-    totalPurchaseDiscount = box.get('totalPurchaseDiscount', defaultValue: 0.0);
-    totalSalesDiscount = box.get('totalSalesDiscount', defaultValue: 0.0);
+    totalPurchases = (box.get('totalPurchases', defaultValue: 0.0) as num).toDouble();
+    totalPurchaseDiscount = (box.get('totalPurchaseDiscount', defaultValue: 0.0) as num).toDouble();
+    totalSalesDiscount = (box.get('totalSalesDiscount', defaultValue: 0.0) as num).toDouble();
 
     final start = box.get('dayStartTime');
     final end = box.get('dayEndTime');
@@ -44,6 +44,7 @@ class DayState extends ChangeNotifier {
 
     final prefs = await SharedPreferences.getInstance();
     prefs.setBool('dayStarted', dayStarted);
+    notifyListeners();
   }
 
   Future<void> _saveToStorage() async {

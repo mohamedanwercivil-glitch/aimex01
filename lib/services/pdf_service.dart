@@ -7,11 +7,17 @@ import '../models/sale_item.dart';
 
 class PdfService {
   // دالة لإعادة تشكيل النص العربي لربط الحروف ببعضها
-  // تم إزالة العكس اليدوي لأن اتجاه النص RTL يقوم بذلك تلقائياً
   static String _shape(String text) {
     if (text.isEmpty) return text;
     try {
-      return ArabicReshaper().reshape(text);
+      // تعديل يدوي لبعض الحروف التي قد تسبب مشاكل في بعض الخطوط (مثل الياء والى النهائية)
+      // بعض الخطوط لا تدعم Glyph الياء المنقوطة في نهاية الكلمة بشكل جيد في الـ PDF
+      String processedText = text.replaceAll('ي ', 'ى ').replaceAll('ي\n', 'ى\n');
+      if (processedText.endsWith('ي')) {
+        processedText = processedText.substring(0, processedText.length - 1) + 'ى';
+      }
+      
+      return ArabicReshaper().reshape(processedText);
     } catch (e) {
       return text;
     }
@@ -33,6 +39,7 @@ class PdfService {
   }) async {
     final pdf = pw.Document();
 
+    // نصيحة: إذا استمرت المشكلة، يفضل استبدال Tajawal بخط Cairo-Regular.ttf
     final fontData = await rootBundle.load("assets/fonts/Tajawal-Regular.ttf");
     final ttf = pw.Font.ttf(fontData);
     
@@ -143,7 +150,7 @@ class PdfService {
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Text(_shape('شركة الريان'), style: pw.TextStyle(font: ttf, fontSize: 8, color: PdfColors.grey500)),
+                  pw.Text(_shape('AIMEX'), style: pw.TextStyle(font: ttf, fontSize: 8, color: PdfColors.grey500)),
                   pw.Text('${_shape('صفحة')} ${context.pageNumber} ${_shape('من')} ${context.pagesCount}', style: pw.TextStyle(font: ttf, fontSize: 9)),
                 ],
               ),

@@ -20,13 +20,10 @@ class SettlementScreen extends StatefulWidget {
   const SettlementScreen({super.key, this.editSettlementId});
 
   @override
-  State<SettlementScreen> createState() =>
-      _SettlementScreenState();
+  State<SettlementScreen> createState() => _SettlementScreenState();
 }
 
-class _SettlementScreenState
-    extends State<SettlementScreen> {
-
+class _SettlementScreenState extends State<SettlementScreen> {
   final customerController = TextEditingController();
   final amountController = TextEditingController();
   final remarksController = TextEditingController();
@@ -37,13 +34,27 @@ class _SettlementScreenState
   final _amountFocusNode = FocusNode();
   final _remarksFocusNode = FocusNode();
   bool _isSaving = false;
+  double _currentBalance = 0.0;
 
   @override
   void initState() {
     super.initState();
-    LoggerService.userAction('فتح شاشة تحصيل العملاء', {'تعديل': widget.editSettlementId != null});
     if (widget.editSettlementId != null) {
       _loadSettlementForEdit(widget.editSettlementId!);
+    }
+    customerController.addListener(_updateBalance);
+  }
+
+  void _updateBalance() {
+    final name = customerController.text.trim();
+    if (name.isNotEmpty) {
+      setState(() {
+        _currentBalance = CustomerStore.getBalance(name);
+      });
+    } else {
+      setState(() {
+        _currentBalance = 0.0;
+      });
     }
   }
 
@@ -57,7 +68,6 @@ class _SettlementScreenState
         selectedWallet = record['wallet'] == 'نقدي' ? null : record['wallet'];
         remarksController.text = record['remarks'] ?? '';
       });
-      LoggerService.logicEffect('تم تحميل بيانات التحصيل للتعديل', {'id': id, 'عميل': customerController.text});
     } catch (e) {
       LoggerService.error('فشل تحميل بيانات التحصيل للتعديل', error: e);
     }
@@ -68,34 +78,27 @@ class _SettlementScreenState
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('حذف عملية التحصيل نهائياً؟'),
-        content: const Text('سيتم إعادة المديونية للعميل وخصم المبلغ من الخزنة. هل أنت متأكد؟'),
+        content: const Text('سيتم حذف السجل وعكس أثره من الخزنة وحساب العميل. هل أنت متأكد؟'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
           TextButton(
             onPressed: () {
-              LoggerService.userAction('حذف عملية تحصيل نهائياً', {'id': id});
+              LoggerService.userAction('حذف تحصيل نهائياً', {'id': id});
               DayRecordsStore.reverseInvoiceEffects(id);
-              Navigator.pop(context); 
-              if (widget.editSettlementId != null) Navigator.pop(context);
+              if (widget.editSettlementId != null) {
+                Navigator.pop(context);
+                Navigator.pop(context);
+              } else {
+                Navigator.pop(context);
+              }
               setState(() {});
-              ToastService.show('تم حذف التحصيل وعكس أثرها');
+              ToastService.show('تم حذف التحصيل وعكس أثره');
             },
             child: const Text('تأكيد الحذف', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    customerController.dispose();
-    amountController.dispose();
-    remarksController.dispose();
-    _customerFocusNode.dispose();
-    _amountFocusNode.dispose();
-    _remarksFocusNode.dispose();
-    super.dispose();
   }
 
   Future<void> _generateAndShareSettlement(String customerName, double amount) async {
@@ -115,7 +118,7 @@ class _SettlementScreenState
       );
 
       final dateStr = DateFormat('d-M-yyyy').format(DateTime.now());
-      final fileName = '$customerName $dateStr.pdf';
+      final fileName = '${customerName}_$dateStr.pdf';
       final tempDir = await getTemporaryDirectory();
       final file = File('${tempDir.path}/$fileName');
       await file.writeAsBytes(pdfData);
@@ -123,7 +126,6 @@ class _SettlementScreenState
       await Share.shareXFiles([XFile(file.path)], text: 'إيصال سداد - $customerName');
     } catch (e) {
       LoggerService.error('خطأ أثناء توليد أو مشاركة إيصال السداد', error: e);
-      ToastService.show('حدث خطأ أثناء مشاركة الإيصال');
     }
   }
 
@@ -137,9 +139,7 @@ class _SettlementScreenState
     final amount = double.tryParse(amountController.text) ?? 0;
     final remarks = remarksController.text.trim();
 
-    LoggerService.userAction('ضغط حفظ عملية تحصيل', {'عميل': customer, 'مبلغ': amount});
-
-    if (customer.isEmpty || amount <= 0) {
+    if (customer.isEmpty || amount == 0) {
       ToastService.show('ادخل اسم عميل ومبلغ صحيح');
       return;
     }
@@ -147,22 +147,32 @@ class _SettlementScreenState
     setState(() => _isSaving = true);
 
     try {
-      double balanceBefore = CustomerStore.getBalance(customer);
-
       if (widget.editSettlementId != null) {
-        LoggerService.logicEffect('تعديل تحصيل: عكس الأثر القديم', {'id': widget.editSettlementId});
         DayRecordsStore.reverseInvoiceEffects(widget.editSettlementId!);
-        await Future.delayed(const Duration(milliseconds: 100));
       }
 
-      final result = FinanceService.deposit(
-        amount: amount,
-        paymentType: paymentType,
-        walletName: paymentType == 'تحويل' ? selectedWallet : null,
-      );
+      // تم تعديل دوال المالية لدعم المبالغ السالبة تلقائياً
+      // إذا كان المبلغ موجب: إيداع في الخزنة (تحصيل من عميل)
+      // إذا كان المبلغ سالب: سحب من الخزنة (رد مبلغ لعميل)
+      FinanceResult result;
+      if (amount > 0) {
+        result = FinanceService.deposit(
+          amount: amount,
+          paymentType: paymentType,
+          walletName: paymentType == 'تحويل' ? selectedWallet : null,
+          reason: "تحصيل من عميل: $customer"
+        );
+      } else {
+        result = FinanceService.withdraw(
+          amount: amount.abs(),
+          paymentType: paymentType,
+          walletName: paymentType == 'تحويل' ? selectedWallet : null,
+          reason: "رد مبلغ لعميل: $customer",
+          allowNegative: true, // سماح بالسالب في حالة رد مبالغ
+        );
+      }
 
       if (!result.success) {
-        LoggerService.warn('فشل إيداع مبلغ التحصيل: ${result.message}');
         ToastService.show(result.message);
         setState(() => _isSaving = false);
         return;
@@ -185,11 +195,9 @@ class _SettlementScreenState
         'remarks': remarks,
       });
 
-      LoggerService.stateChange('حساب العميل بعد التحصيل', balanceBefore, CustomerStore.getBalance(customer));
-      
       await _generateAndShareSettlement(customer, amount);
 
-      ToastService.show(widget.editSettlementId != null ? 'تم تعديل التحصيل بنجاح' : 'تم تسجيل التحصيل وتحديث حساب العميل');
+      ToastService.show(widget.editSettlementId != null ? 'تم تعديل العملية بنجاح' : 'تم تسجيل العملية وتحديث حساب العميل');
 
       if (widget.editSettlementId != null) {
         Navigator.pop(context);
@@ -204,7 +212,7 @@ class _SettlementScreenState
         _customerFocusNode.requestFocus();
       }
     } catch (e, stack) {
-      LoggerService.error('خطأ قاتل أثناء حفظ عملية التحصيل', error: e, stackTrace: stack);
+      LoggerService.error('خطأ قاتل أثناء حفظ العملية', error: e, stackTrace: stack);
       ToastService.show('حدث خطأ أثناء الحفظ');
       setState(() => _isSaving = false);
     }
@@ -213,15 +221,38 @@ class _SettlementScreenState
   @override
   Widget build(BuildContext context) {
     final wallets = CashState.instance.wallets.keys.toList();
-    final todaySettlements = DayRecordsStore.getAll()
-        .where((r) => r['type'] == 'settlement')
-        .toList()
-        .reversed
-        .toList();
+    final allRecords = DayRecordsStore.getAll();
+    
+    final todaySettlements = allRecords.where((r) {
+      if (r['type'] != 'settlement') return false;
+      
+      if (r['invoiceId'] != null) {
+        final saleRecord = allRecords.firstWhere(
+          (e) => e['type'] == 'sale' && e['invoiceId'] == r['invoiceId'],
+          orElse: () => {},
+        );
+        if (saleRecord.isNotEmpty) {
+          final pAmt = (saleRecord['paidAmount'] as num).toDouble();
+          if (pAmt == 0) return false;
+        }
+      }
+      return true;
+    }).toList().reversed.toList();
+
+    String balanceText = "";
+    if (customerController.text.trim().isNotEmpty) {
+      if (_currentBalance > 0) {
+        balanceText = " (عليه: ${_currentBalance.toStringAsFixed(2)})";
+      } else if (_currentBalance < 0) {
+        balanceText = " (له: ${_currentBalance.abs().toStringAsFixed(2)})";
+      } else {
+        balanceText = " (رصيده صفر)";
+      }
+    }
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.editSettlementId != null ? 'تعديل تحصيل' : 'سداد العملاء'),
+        title: Text('${widget.editSettlementId != null ? "تعديل عملية" : "سداد العملاء"}$balanceText'),
       ),
       body: Column(
         children: [
@@ -250,7 +281,7 @@ class _SettlementScreenState
                         enabled: !_isSaving,
                         controller: amountController,
                         focusNode: _amountFocusNode,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
                         labelText: 'المبلغ',
                         textInputAction: TextInputAction.next,
                         onSubmitted: (_) => _remarksFocusNode.requestFocus(),
@@ -280,7 +311,7 @@ class _SettlementScreenState
                   ],
                   onChanged: _isSaving ? null : (value) {
                     setState(() => paymentType = value!);
-                    LoggerService.userAction('تغيير طريقة دفع التحصيل', {'النوع': value});
+                    LoggerService.userAction('تغيير طريقة الدفع', {'النوع': value});
                   },
                 ),
                 if (paymentType == 'تحويل') ...[
@@ -291,7 +322,7 @@ class _SettlementScreenState
                     items: wallets.map((wallet) => DropdownMenuItem(value: wallet, child: Text(wallet))).toList(),
                     onChanged: _isSaving ? null : (value) {
                       setState(() => selectedWallet = value);
-                      LoggerService.userAction('اختيار محفظة التحصيل', {'المحفظة': value});
+                      LoggerService.userAction('اختيار محفظة', {'المحفظة': value});
                     },
                   ),
                 ],
@@ -301,7 +332,7 @@ class _SettlementScreenState
                   height: 50,
                   child: ElevatedButton(
                     onPressed: _isSaving ? null : _saveSettlement,
-                    child: _isSaving ? const CircularProgressIndicator(color: Colors.white) : const Text('حفظ عملية السداد'),
+                    child: _isSaving ? const CircularProgressIndicator(color: Colors.white) : const Text('حفظ العملية'),
                   ),
                 ),
               ],
@@ -310,7 +341,7 @@ class _SettlementScreenState
           const Divider(thickness: 2),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
-            child: Text('سجل تحصيلات اليوم', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            child: Text('سجل حركات السداد اليوم', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           ),
           Expanded(
             child: ListView.builder(
@@ -322,17 +353,21 @@ class _SettlementScreenState
                 final bool isBeingEdited = widget.editSettlementId != null && 
                     (settlement['id'] == widget.editSettlementId || settlement['invoiceId'] == widget.editSettlementId);
                 final remarks = settlement['remarks'] ?? '';
+                final amt = (settlement['amount'] as num).toDouble();
 
                 return Card(
                   margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                   child: ListTile(
                     dense: true,
-                    leading: const Icon(Icons.person_add, color: Colors.teal),
+                    leading: Icon(
+                      amt > 0 ? Icons.person_add : Icons.person_remove,
+                      color: amt > 0 ? Colors.teal : Colors.orange,
+                    ),
                     title: Text('${settlement['customer']}'),
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('المبلغ: ${settlement['amount']} | ${settlement['paymentType']} | $time'),
+                        Text('المبلغ: $amt | ${settlement['paymentType']} | $time'),
                         if (remarks.isNotEmpty)
                           Text('ملاحظة: $remarks', style: const TextStyle(color: Colors.blueGrey, fontStyle: FontStyle.italic)),
                       ],
@@ -343,7 +378,7 @@ class _SettlementScreenState
                         IconButton(
                           icon: const Icon(Icons.share, color: Colors.teal, size: 20),
                           onPressed: () {
-                            LoggerService.userAction('مشاركة إيصال تحصيل من السجل');
+                            LoggerService.userAction('مشاركة إيصال من السجل');
                             _generateAndShareSettlement(settlement['customer'], (settlement['amount'] as num).toDouble());
                           },
                         ),
@@ -351,7 +386,7 @@ class _SettlementScreenState
                           IconButton(
                             icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
                             onPressed: () {
-                              LoggerService.userAction('ضغط تعديل تحصيل من السجل');
+                              LoggerService.userAction('ضغط تعديل من السجل');
                               Navigator.push(context, MaterialPageRoute(builder: (_) => SettlementScreen(editSettlementId: settlement['id'] ?? settlement['invoiceId']))).then((_) => setState(() {}));
                             },
                           ),

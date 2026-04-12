@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
 import '../utils/arabic_utils.dart';
+import '../services/logger_service.dart';
 
 class InventoryStore {
   static final Box box = Hive.box('inventoryBox');
@@ -83,7 +84,8 @@ class InventoryStore {
     }
   }
 
-  static void addItem(String name, double qty, double buyPrice) {
+  static void addItem(String name, double qty, double buyPrice, [String reason = "إضافة صنف/شراء"]) {
+    double before = getItemQty(name);
     final rawItem = box.get(name);
     final now = DateTime.now().toIso8601String();
     
@@ -99,9 +101,18 @@ class InventoryStore {
     });
     
     refreshCache();
+    double after = getItemQty(name);
+    LoggerService.logInventoryChange(
+      itemName: name,
+      qtyChange: qty,
+      before: before,
+      after: after,
+      reason: reason,
+    );
   }
 
   static void updateItem(String name, double newQty, double newPrice) {
+    double before = getItemQty(name);
     final rawItem = box.get(name);
     if (rawItem == null) return;
 
@@ -117,9 +128,18 @@ class InventoryStore {
     });
     
     refreshCache();
+    double after = getItemQty(name);
+    LoggerService.logInventoryChange(
+      itemName: name,
+      qtyChange: after - before,
+      before: before,
+      after: after,
+      reason: "تحديث يدوي للكمية والسعر",
+    );
   }
 
-  static bool sellItem(String name, double qtyToSell) {
+  static bool sellItem(String name, double qtyToSell, [String reason = "بيع صنف"]) {
+    double before = getItemQty(name);
     final rawItem = box.get(name);
     if (rawItem == null) return false;
 
@@ -149,13 +169,22 @@ class InventoryStore {
     });
 
     refreshCache();
+    double after = getItemQty(name);
+    LoggerService.logInventoryChange(
+      itemName: name,
+      qtyChange: -qtyToSell,
+      before: before,
+      after: after,
+      reason: reason,
+    );
     return true;
   }
 
-  static void returnItem(String name, double qty) {
+  static void returnItem(String name, double qty, [String reason = "مرتجع صنف"]) {
+    double before = getItemQty(name);
     final rawItem = box.get(name);
     if (rawItem == null) {
-      addItem(name, qty, 0);
+      addItem(name, qty, 0, reason);
       return;
     }
 
@@ -171,6 +200,14 @@ class InventoryStore {
     });
     
     refreshCache();
+    double after = getItemQty(name);
+    LoggerService.logInventoryChange(
+      itemName: name,
+      qtyChange: qty,
+      before: before,
+      after: after,
+      reason: reason,
+    );
   }
 
   static double getItemQty(String name) {
@@ -204,7 +241,7 @@ class InventoryStore {
     final normalizedQuery = ArabicUtils.normalize(query);
     return getAllItems()
         .where((item) => ArabicUtils.normalize(item['name'].toString()).contains(normalizedQuery))
-        .map((item) => "${item['name']} | المتاح: ${item['quantity']}")
+        .map((item) => "${item['name']} | المتاح: ${item['quantity']} | آخر سعر: ${item['lastBuyPrice']}")
         .toList();
   }
 
@@ -215,7 +252,7 @@ class InventoryStore {
           ArabicUtils.normalize(item['name'].toString()).contains(normalizedQuery) &&
           (item['quantity'] as double) > 0
         )
-        .map((item) => "${item['name']} | المتاح: ${item['quantity']}")
+        .map((item) => "${item['name']} | المتاح: ${item['quantity']} | آخر سعر: ${item['lastBuyPrice']}")
         .toList();
   }
 }

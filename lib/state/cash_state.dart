@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import '../services/logger_service.dart';
 
 class CashState extends ChangeNotifier {
   static final CashState instance = CashState._internal();
   CashState._internal() {
-    _loadFromStorage();
+    loadFromStorage();
   }
 
   static const String _boxName = 'dayBox';
@@ -22,7 +23,7 @@ class CashState extends ChangeNotifier {
   };
   Map<String, double> startOfDayWallets = {};
 
-  void _loadFromStorage() {
+  void loadFromStorage() {
     cash = (_box.get('cash', defaultValue: 0.0) as num).toDouble();
     startOfDayCash = (_box.get('startOfDayCash', defaultValue: 0.0) as num).toDouble();
 
@@ -60,6 +61,11 @@ class CashState extends ChangeNotifier {
     return wallets[boxName] ?? 0.0;
   }
 
+  double getInitialBalance(String boxName) {
+    if (boxName == 'نقدي') return startOfDayCash;
+    return startOfDayWallets[boxName] ?? 0.0;
+  }
+
   double get totalMoney {
     double total = cash;
     for (var value in wallets.values) {
@@ -72,9 +78,18 @@ class CashState extends ChangeNotifier {
     required double startCash,
     required Map<String, double> startWallets,
   }) {
+    LoggerService.log(
+      level: 'ADMIN',
+      action: 'SET_START_OF_DAY',
+      entity: 'system_balance',
+      details: 'manual_admin_reset',
+      before: 'cash=$startOfDayCash, wallets=$startOfDayWallets',
+      after: 'cash=$startCash, wallets=$startWallets',
+    );
+
     cash = startCash;
     startOfDayCash = startCash;
-    
+
     // تصفير البدايات القديمة
     startOfDayWallets.clear();
     wallets.updateAll((key, value) => 0);
@@ -89,30 +104,62 @@ class CashState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void depositCash(double amount) {
+  void depositCash(double amount, [String reason = "إيداع نقدي"]) {
+    double before = cash;
     cash += amount;
     _save();
+    LoggerService.logFinanceChange(
+      walletName: 'نقدي',
+      amount: amount,
+      before: before,
+      after: cash,
+      reason: reason,
+    );
     notifyListeners();
   }
 
-  void withdrawCash(double amount) {
+  void withdrawCash(double amount, [String reason = "سحب نقدي"]) {
+    double before = cash;
     cash -= amount;
     _save();
+    LoggerService.logFinanceChange(
+      walletName: 'نقدي',
+      amount: -amount,
+      before: before,
+      after: cash,
+      reason: reason,
+    );
     notifyListeners();
   }
 
-  void depositToWallet(String wallet, double amount) {
+  void depositToWallet(String wallet, double amount, [String reason = "إيداع للمحفظة"]) {
     if (wallets.containsKey(wallet)) {
-      wallets[wallet] = wallets[wallet]! + amount;
+      double before = wallets[wallet]!;
+      wallets[wallet] = before + amount;
       _save();
+      LoggerService.logFinanceChange(
+        walletName: wallet,
+        amount: amount,
+        before: before,
+        after: wallets[wallet]!,
+        reason: reason,
+      );
       notifyListeners();
     }
   }
 
-  void withdrawFromWallet(String wallet, double amount) {
+  void withdrawFromWallet(String wallet, double amount, [String reason = "سحب من المحفظة"]) {
     if (wallets.containsKey(wallet)) {
-      wallets[wallet] = wallets[wallet]! - amount;
+      double before = wallets[wallet]!;
+      wallets[wallet] = before - amount;
       _save();
+      LoggerService.logFinanceChange(
+        walletName: wallet,
+        amount: -amount,
+        before: before,
+        after: wallets[wallet]!,
+        reason: reason,
+      );
       notifyListeners();
     }
   }
@@ -122,27 +169,20 @@ class CashState extends ChangeNotifier {
     required String to,
     required double amount,
   }) {
-    if (from == to) return false;
-    if (amount <= 0) return false;
+    if (from == to || amount <= 0) return false;
 
     if (from == 'نقدي') {
-      cash -= amount;
+      withdrawCash(amount, "تحويل صادر إلى $to");
     } else {
-      if (wallets.containsKey(from)) {
-        wallets[from] = wallets[from]! - amount;
-      }
+      withdrawFromWallet(from, amount, "تحويل صادر إلى $to");
     }
 
     if (to == 'نقدي') {
-      cash += amount;
+      depositCash(amount, "تحويل وارد من $from");
     } else {
-      if (wallets.containsKey(to)) {
-        wallets[to] = wallets[to]! + amount;
-      }
+      depositToWallet(to, amount, "تحويل وارد من $from");
     }
 
-    _save();
-    notifyListeners();
     return true;
   }
 }

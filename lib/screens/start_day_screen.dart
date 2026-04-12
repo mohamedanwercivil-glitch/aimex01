@@ -18,7 +18,6 @@ class _StartDayScreenState
   final cashController = TextEditingController();
   final Map<String, TextEditingController> walletControllers = {};
   
-  // إضافة FocusNodes للتنقل بين الحقول
   final FocusNode _cashFocusNode = FocusNode();
   final Map<String, FocusNode> _walletFocusNodes = {};
 
@@ -26,9 +25,15 @@ class _StartDayScreenState
   void initState() {
     super.initState();
 
+    // 🔹 وضع رصيد الكاش الحالي كقيمة افتراضية
+    cashController.text = CashState.instance.cash.toStringAsFixed(2);
+
     final walletKeys = CashState.instance.wallets.keys.toList();
     for (var key in walletKeys) {
-      walletControllers[key] = TextEditingController();
+      // 🔹 وضع رصيد كل محفظة كقيمة افتراضية
+      walletControllers[key] = TextEditingController(
+        text: CashState.instance.wallets[key]?.toStringAsFixed(2) ?? "0.00"
+      );
       _walletFocusNodes[key] = FocusNode();
     }
   }
@@ -58,7 +63,6 @@ class _StartDayScreenState
           double.tryParse(controller.text) ?? 0;
     });
 
-    // 🔹 ضبط النقدي والمحافظ
     CashState.instance.setStartOfDay(
       startCash: cash,
       startWallets: wallets,
@@ -67,7 +71,7 @@ class _StartDayScreenState
     DayState.instance.startDay(cash);
     BackgroundService.scheduleEndOfDayTask();
 
-    ToastService.show('تم بدء اليوم');
+    ToastService.show('تم بدء اليوم بالأرصدة المحددة');
 
     Navigator.pop(context);
   }
@@ -88,18 +92,28 @@ class _StartDayScreenState
         child: SingleChildScrollView(
           child: Column(
             children: [
-              const SizedBox(height: 16),
+              const Text(
+                'تأكيد أرصدة بداية اليوم:',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'تم وضع الأرصدة الحالية تلقائياً، يمكنك تعديلها إذا كانت مختلفة عن الواقع.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey),
+              ),
+              const SizedBox(height: 24),
 
-              // 🔹 خانة النقدي
               TextField(
                 controller: cashController,
                 focusNode: _cashFocusNode,
                 autofocus: true,
-                keyboardType: TextInputType.number,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 textInputAction: walletEntries.isNotEmpty ? TextInputAction.next : TextInputAction.done,
                 decoration: const InputDecoration(
-                  labelText: 'نقدي',
+                  labelText: 'رصيد النقدي (كاش)',
                   border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.money),
                 ),
                 onSubmitted: (_) {
                   if (walletEntries.isNotEmpty) {
@@ -112,7 +126,6 @@ class _StartDayScreenState
 
               const SizedBox(height: 12),
 
-              // 🔹 المحافظ
               ...walletEntries.asMap().entries.map((mapEntry) {
                 final index = mapEntry.key;
                 final walletKey = mapEntry.value.key;
@@ -124,11 +137,12 @@ class _StartDayScreenState
                   child: TextField(
                     controller: controller,
                     focusNode: _walletFocusNodes[walletKey],
-                    keyboardType: TextInputType.number,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     textInputAction: isLast ? TextInputAction.done : TextInputAction.next,
                     decoration: InputDecoration(
                       labelText: walletKey,
                       border: const OutlineInputBorder(),
+                      prefixIcon: const Icon(Icons.account_balance_wallet),
                     ),
                     onSubmitted: (_) {
                       if (!isLast) {
@@ -145,10 +159,14 @@ class _StartDayScreenState
 
               SizedBox(
                 width: double.infinity,
-                height: 50,
+                height: 55,
                 child: ElevatedButton(
                   onPressed: dayStarted ? null : _startDay,
-                  child: const Text('بدء اليوم'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green.shade700,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('بدء اليوم بالأرصدة الحالية', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 ),
               ),
             ],

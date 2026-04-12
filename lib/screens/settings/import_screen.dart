@@ -3,8 +3,8 @@ import 'package:hive/hive.dart';
 import '../../data/inventory_store.dart';
 import '../../data/customer_store.dart';
 import '../../data/supplier_store.dart';
-import '../../data/day_records_store.dart';
 import '../../services/toast_service.dart';
+import '../../services/backup_service.dart';
 
 class ImportScreen extends StatefulWidget {
   const ImportScreen({super.key});
@@ -15,59 +15,6 @@ class ImportScreen extends StatefulWidget {
 
 class _ImportScreenState extends State<ImportScreen> {
   bool _isProcessing = false;
-  bool _isAuthenticated = false;
-  final TextEditingController _passwordController = TextEditingController();
-
-  @override
-  void dispose() {
-    _passwordController.dispose();
-    super.dispose();
-  }
-
-  void _showPasswordDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text('دخول الإدارة'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('يرجى إدخال كلمة المرور للوصول لخدمات الاستيراد والمسح'),
-            const SizedBox(height: 15),
-            TextField(
-              controller: _passwordController,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'كلمة المرور',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('إلغاء'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (_passwordController.text == 'MOHAMED') {
-                setState(() {
-                  _isAuthenticated = true;
-                });
-                Navigator.pop(context);
-                _passwordController.clear();
-              } else {
-                ToastService.show('كلمة المرور خاطئة');
-              }
-            },
-            child: const Text('دخول'),
-          ),
-        ],
-      ),
-    );
-  }
 
   Future<void> _clearDatabase() async {
     final confirm = await showDialog<bool>(
@@ -97,7 +44,8 @@ class _ImportScreenState extends State<ImportScreen> {
           'dayRecordsBox',
           'dayBox',
           'salesDraftBox',
-          'purchasesDraftBox'
+          'purchasesDraftBox',
+          'transactionsBox'
         ];
 
         for (var boxName in boxesToClear) {
@@ -125,31 +73,8 @@ class _ImportScreenState extends State<ImportScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_isAuthenticated) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('الإدارة')),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.lock, size: 80, color: Colors.grey),
-              const SizedBox(height: 20),
-              const Text('هذه الشاشة محمية بكلمة مرور', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 30),
-              ElevatedButton.icon(
-                onPressed: _showPasswordDialog,
-                icon: const Icon(Icons.vpn_key),
-                label: const Text('إدخال كلمة المرور'),
-                style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15)),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
     return Scaffold(
-      appBar: AppBar(title: const Text('استيراد بيانات من إكسيل')),
+      appBar: AppBar(title: const Text('إدارة البيانات والنسخ الاحتياطي')),
       body: Stack(
         children: [
           Padding(
@@ -160,11 +85,72 @@ class _ImportScreenState extends State<ImportScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const Text(
-                    'اختر نوع البيانات التي تود استيرادها من ملف إكسيل (.xlsx)',
+                    'النسخ الاحتياطي الكامل (ملف aimex)',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 16),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.purple),
                   ),
-                  const SizedBox(height: 30),
+                  const SizedBox(height: 15),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildImportButton(
+                          context,
+                          label: 'تصدير ملف aimex',
+                          icon: Icons.cloud_upload,
+                          color: Colors.purple,
+                          onPressed: () async {
+                            setState(() => _isProcessing = true);
+                            try {
+                              await BackupService.exportBackup();
+                              ToastService.show('تم تصدير النسخة الاحتياطية');
+                            } catch (e) {
+                              ToastService.show('فشل التصدير');
+                            } finally {
+                              setState(() => _isProcessing = false);
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _buildImportButton(
+                          context,
+                          label: 'استيراد ملف aimex',
+                          icon: Icons.cloud_download,
+                          color: Colors.deepPurple,
+                          onPressed: () async {
+                            setState(() => _isProcessing = true);
+                            try {
+                              bool success = await BackupService.importBackup();
+                              if (success) {
+                                ToastService.show('تم استيراد كافة البيانات بنجاح');
+                              }
+                            } catch (e) {
+                              ToastService.show('فشل الاستيراد');
+                            } finally {
+                              setState(() => _isProcessing = false);
+                            }
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 10),
+                    child: Text(
+                      'ملحوظة: ملف aimex يحتوي على كل البيانات (أصناف، عملاء، موردين، خزنة، لوج)',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  ),
+
+                  const Divider(height: 40, thickness: 2),
+                  const Text(
+                    'استيراد بيانات من إكسيل (.xlsx)',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 20),
                   
                   _buildImportButton(
                     context,
@@ -221,7 +207,7 @@ class _ImportScreenState extends State<ImportScreen> {
 
                   const Divider(height: 40, thickness: 2),
                   const Text(
-                    'استيراد الأرصدة والحسابات',
+                    'استيراد الأرصدة والحسابات من إكسيل',
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blue),
                   ),
@@ -328,7 +314,7 @@ class _ImportScreenState extends State<ImportScreen> {
       ),
       onPressed: _isProcessing ? null : onPressed,
       icon: Icon(icon),
-      label: Text(label, style: const TextStyle(fontSize: 17)),
+      label: Text(label, textAlign: TextAlign.center, style: const TextStyle(fontSize: 15)),
     );
   }
 }

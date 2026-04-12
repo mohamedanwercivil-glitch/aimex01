@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import '../services/export_excel_service.dart';
+import '../services/backup_service.dart';
 import '../state/day_state.dart';
 import '../services/toast_service.dart';
 
@@ -23,24 +24,28 @@ class _EndDayScreenState extends State<EndDayScreen> {
       final excelPath = results['excel'] ?? "";
       final zipPath = results['zip'] ?? "";
 
+      // 2. إنشاء نسخة احتياطية كاملة (aimex)
+      final backupPath = await BackupService.generateBackupFile();
+
       List<XFile> filesToShare = [];
       if (excelPath.isNotEmpty) filesToShare.add(XFile(excelPath));
       if (zipPath.isNotEmpty) filesToShare.add(XFile(zipPath));
+      if (backupPath.isNotEmpty) filesToShare.add(XFile(backupPath));
 
       if (filesToShare.isNotEmpty) {
-        // 2. مشاركة الملفات
+        // 3. مشاركة كل الملفات معاً
         await Share.shareXFiles(
           filesToShare,
-          text: 'تقرير المبيعات وفواتير اليوم - ${DateTime.now().toString().split(' ')[0]}',
+          text: 'تقرير اليوم + الفواتير + نسخة احتياطية (aimex) - ${DateTime.now().toString().split(' ')[0]}',
         );
 
-        // 3. إنهاء اليوم برمجياً وتصفير البيانات
-        DayState.instance.endDay();
+        // 4. إنهاء اليوم برمجياً وتصفير البيانات
+        await DayState.instance.endDay();
         
-        // 4. مسح مجلد الفواتير لبدء يوم جديد
+        // 5. مسح مجلد الفواتير لبدء يوم جديد
         await ExportExcelService.clearDailyInvoices();
 
-        ToastService.show('تم إنهاء اليوم وتصدير التقارير بنجاح');
+        ToastService.show('تم إنهاء اليوم وتصدير كافة التقارير والنسخة الاحتياطية بنجاح');
         Navigator.pop(context);
       } else {
         ToastService.show('فشل في إنشاء التقارير');
@@ -64,7 +69,7 @@ class _EndDayScreenState extends State<EndDayScreen> {
             const Icon(Icons.archive, size: 100, color: Colors.red),
             const SizedBox(height: 20),
             const Text(
-              'عند إنهاء اليوم، سيتم إنشاء تقرير إكسيل مفصل وضغط كافة فواتير المبيعات (PDF) في ملف واحد لمشاركتها.',
+              'عند إنهاء اليوم، سيتم إنشاء تقرير إكسيل مفصل، ملف مضغوط للفواتير، ونسخة احتياطية شاملة (aimex) لمشاركتها.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 16),
             ),

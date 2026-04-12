@@ -1,96 +1,115 @@
 import 'dart:io';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart';
 
-/// خدمة اللوج المحسنة: تسجل كل تفصيلة بدقة متناهية (Black Box)
-/// الهدف: إعادة بناء السيناريو الذي أدى للمشكلة عند مراجعة الملف.
 class LoggerService {
-  static File? _logFile;
-  static final DateFormat _timeFormat = DateFormat('yyyy-MM-dd HH:mm:ss.SSS');
+  static final DateFormat _fileDatePrefix = DateFormat('yyyy-MM-dd');
+  static final DateFormat _timestampFormat = DateFormat('yyyy-MM-dd HH:mm:ss');
+  static SharedPreferences? _prefs;
+  static bool _initialized = false;
 
   static Future<void> init() async {
     try {
+      _prefs = await SharedPreferences.getInstance();
       final directory = await getApplicationDocumentsDirectory();
       final logDir = Directory('${directory.path}/logs');
-      if (!await logDir.exists()) await logDir.create();
-      
-      _logFile = File('${logDir.path}/system_blackbox_log.txt');
-      
-      await _writeToDisk('\n\n================================================\n');
-      await log('تشغيل التطبيق - جلسة جديدة', level: 'SESSION_START');
-      await log('نظام التشغيل: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}', level: 'SYS_INFO');
+      if (!await logDir.exists()) await logDir.create(recursive: true);
+      _initialized = true;
+      userAction('APP_START', {'version': '1.0.0'});
     } catch (e) {
-      print('CRITICAL: Failed to initialize logger: $e');
+      print('CRITICAL LOGGER ERROR: $e');
     }
   }
 
-  static Future<void> log(String message, {String level = 'INFO', Map<String, dynamic>? data, dynamic error, StackTrace? stackTrace}) async {
-    final timestamp = _timeFormat.format(DateTime.now());
-    
-    // بناء الرسالة بشكل منظم جداً
-    StringBuffer buffer = StringBuffer();
-    buffer.write('[$timestamp] [$level] $message');
-    
-    if (data != null && data.isNotEmpty) {
-      buffer.write('\n    📊 البيانات: $data');
-    }
-    
-    if (error != null) {
-      buffer.write('\n    ❌ خطأ: $error');
-    }
-    
-    if (stackTrace != null) {
-      buffer.write('\n    📍 مسار الخطأ (Stack):\n$stackTrace');
-    }
-    
-    final finalMsg = buffer.toString();
-    print(finalMsg); // للعرض في الكونسول أثناء التطوير
+  static Future<void> log({
+    String level = 'INFO',
+    required String action,
+    required String entity,
+    String details = '-',
+    String before = '-',
+    String after = '-',
+    String error = '-',
+  }) async {
+    if (!_initialized) return;
 
-    await _writeToDisk('$finalMsg\n');
-  }
+    Future.microtask(() async {
+      try {
+        final now = DateTime.now();
+        final timestamp = _timestampFormat.format(now);
+        final txnId = _generateTxnId();
 
-  static Future<void> _writeToDisk(String content) async {
-    try {
-      if (_logFile != null) {
-        // استخدام append لضمان عدم مسح القديم، و flush لضمان الكتابة الفورية في حالة الانهيار
-        await _logFile!.writeAsString(content, mode: FileMode.append, flush: true);
+        final logEntry = '$timestamp | $level | $action | $entity | $details | $before | $after | $error | $txnId';
+
+        final directory = await getApplicationDocumentsDirectory();
+        final logFile = File('${directory.path}/logs/${_fileDatePrefix.format(now)}.log');
+
+        await logFile.writeAsString('$logEntry\n', mode: FileMode.append, flush: true);
+      } catch (e) {
+        // فشل صامت
       }
-    } catch (e) {
-      print('ERROR WRITING LOG: $e');
-    }
+    });
   }
 
-  // --- دوال متخصصة لتسهيل التتبع ---
+  static String _generateTxnId() {
+    if (_prefs == null) return 'TXN-00000';
+    int current = _prefs!.getInt('txn_counter') ?? 0;
+    current++;
+    _prefs!.setInt('txn_counter', current);
+    return 'TXN-${current.toString().padLeft(5, '0')}';
+  }
 
-  /// تسجيل حركة قام بها المستخدم (ضغطة زر، فتح شاشة)
-  static Future<void> userAction(String actionName, [Map<String, dynamic>? params]) => 
-      log('المستخدم: $actionName', level: 'USER_UI', data: params);
+  static void userAction(String name, [Map<String, dynamic>? params]) =>
+      log(action: 'USER_ACTION', entity: 'ui', details: '$name | params=$params');
 
-  /// تسجيل تأثير منطقي (تعديل رصيد، خصم من مخزن)
-  static Future<void> logicEffect(String description, [Map<String, dynamic>? impact]) => 
-      log('تأثير منطقي: $description', level: 'LOGIC_CORE', data: impact);
+  static void logicEffect(String desc, [Map<String, dynamic>? impact]) =>
+      log(action: 'LOGIC_EFFECT', entity: 'core', details: '$desc | impact=$impact');
 
-  /// تسجيل حالة البيانات قبل وبعد عملية معينة
-  static Future<void> stateChange(String entity, dynamic before, dynamic after) => 
-      log('تغيير حالة: $entity', level: 'STATE_CHANGE', data: {'قبل': before, 'بعد': after});
+  static void stateChange(String entity, dynamic before, dynamic after) =>
+      log(action: 'STATE_CHANGE', entity: entity, before: '$before', after: '$after');
 
-  /// تسجيل الأخطاء البرمجية
-  static Future<void> error(String msg, {dynamic error, StackTrace? stackTrace}) => 
-      log(msg, level: 'ERROR_CRITICAL', error: error, stackTrace: stackTrace);
+  static void error(String msg, {dynamic error, StackTrace? stackTrace}) =>
+      log(level: 'ERROR', action: 'EXCEPTION', entity: 'system', error: '$msg | $error', details: 'stack=$stackTrace');
 
-  // توافق مع الأكواد القديمة
-  static Future<void> action(String msg) => userAction(msg);
-  static Future<void> info(String msg) => log(msg, level: 'INFO');
-  static Future<void> warn(String msg) => log(msg, level: 'WARN');
-  static Future<void> logic(String msg) => logicEffect(msg);
+  static void warn(String msg) => log(level: 'WARNING', action: 'ALERT', entity: 'system', details: msg);
 
-  // دالة لجلب مسار الملف الحالي
-  static String get logFilePath => _logFile?.path ?? '';
+  static void logInventoryChange({
+    required String itemName,
+    required double qtyChange,
+    required double before,
+    required double after,
+    required String reason,
+  }) => log(
+      action: 'INVENTORY_CHANGE',
+      entity: 'item_$itemName',
+      details: 'reason=$reason | change=$qtyChange',
+      before: 'qty=$before',
+      after: 'qty=$after'
+  );
+
+  static void logFinanceChange({
+    required String walletName,
+    required double amount,
+    required double before,
+    required double after,
+    required String reason,
+  }) => log(
+      action: 'FINANCE_CHANGE',
+      entity: 'wallet_$walletName',
+      details: 'reason=$reason | amount=$amount',
+      before: 'bal=$before',
+      after: 'bal=$after'
+  );
 
   static Future<void> shareLogFile() async {
-    if (_logFile != null && await _logFile!.exists()) {
-      await Share.shareXFiles([XFile(_logFile!.path)], text: 'ملخص تشخيص النظام (Black Box Log)');
-    }
+    try {
+      final now = DateTime.now();
+      final directory = await getApplicationDocumentsDirectory();
+      final logFile = File('${directory.path}/logs/${_fileDatePrefix.format(now)}.log');
+      if (await logFile.exists()) {
+        await Share.shareXFiles([XFile(logFile.path)], text: 'سجل حركات Aimex');
+      }
+    } catch (e) {}
   }
 }
