@@ -566,6 +566,14 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.editInvoiceId != null ? 'تعديل فاتورة $originalInvoiceNumber' : 'فاتورة بيع جديدة'),
+        actions: [
+          if (widget.editInvoiceId == null)
+            IconButton(
+              onPressed: dayStarted && !_isSaving ? _clearFullInvoice : null,
+              icon: const Icon(Icons.delete_sweep, color: Colors.red, size: 28),
+              tooltip: 'مسح الفاتورة بالكامل',
+            ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),
@@ -795,14 +803,6 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
                       ),
                     ),
                   ),
-                  if (widget.editInvoiceId == null) ...[
-                    const SizedBox(width: 10),
-                    IconButton(
-                      onPressed: dayStarted && !_isSaving ? _clearFullInvoice : null,
-                      icon: const Icon(Icons.delete_sweep, color: Colors.red, size: 30),
-                      tooltip: 'مسح الفاتورة بالكامل',
-                    ),
-                  ]
                 ],
               ),
               const SizedBox(height: 100),

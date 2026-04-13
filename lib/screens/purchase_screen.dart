@@ -549,8 +549,8 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
             ),
           if (widget.editInvoiceId == null)
             IconButton(
-              icon: const Icon(Icons.delete_forever, color: Colors.red),
-              onPressed: _isSaving ? null : _clearFullInvoice,
+              icon: const Icon(Icons.delete_sweep, color: Colors.red, size: 28),
+              onPressed: dayStarted && !_isSaving ? _clearFullInvoice : null,
               tooltip: 'مسح الفاتورة الحالية',
             ),
         ],

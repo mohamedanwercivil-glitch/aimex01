@@ -9,13 +9,19 @@ class LoggerService {
   static final DateFormat _timestampFormat = DateFormat('yyyy-MM-dd HH:mm:ss');
   static SharedPreferences? _prefs;
   static bool _initialized = false;
+  static String? _logDirPath;
+  static int _txnCounter = 0;
 
   static Future<void> init() async {
     try {
       _prefs = await SharedPreferences.getInstance();
+      _txnCounter = _prefs!.getInt('txn_counter') ?? 0;
+
       final directory = await getApplicationDocumentsDirectory();
-      final logDir = Directory('${directory.path}/logs');
+      _logDirPath = '${directory.path}/logs';
+      final logDir = Directory(_logDirPath!);
       if (!await logDir.exists()) await logDir.create(recursive: true);
+
       _initialized = true;
       userAction('APP_START', {'version': '1.0.0'});
     } catch (e) {
@@ -32,32 +38,30 @@ class LoggerService {
     String after = '-',
     String error = '-',
   }) async {
-    if (!_initialized) return;
+    if (!_initialized || _logDirPath == null) return;
 
+    // تشغيل في الميكرو-تاسك لضمان عدم تعطيل الـ UI Thread
     Future.microtask(() async {
       try {
         final now = DateTime.now();
         final timestamp = _timestampFormat.format(now);
-        final txnId = _generateTxnId();
+        _txnCounter++;
 
-        final logEntry = '$timestamp | $level | $action | $entity | $details | $before | $after | $error | $txnId';
+        // حفظ العداد كل 10 عمليات لتوفير استهلاك البطارية والسرعة
+        if (_txnCounter % 10 == 0) {
+          _prefs?.setInt('txn_counter', _txnCounter);
+        }
 
-        final directory = await getApplicationDocumentsDirectory();
-        final logFile = File('${directory.path}/logs/${_fileDatePrefix.format(now)}.log');
+        final logEntry = '$timestamp | $level | $action | $entity | $details | $before | $after | $error | TXN-$_txnCounter';
 
-        await logFile.writeAsString('$logEntry\n', mode: FileMode.append, flush: true);
+        final logFile = File('$_logDirPath/${_fileDatePrefix.format(now)}.log');
+
+        // حذف flush: true لزيادة السرعة (النظام سيتولى الكتابة في الوقت المناسب)
+        await logFile.writeAsString('$logEntry\n', mode: FileMode.append);
       } catch (e) {
         // فشل صامت
       }
     });
-  }
-
-  static String _generateTxnId() {
-    if (_prefs == null) return 'TXN-00000';
-    int current = _prefs!.getInt('txn_counter') ?? 0;
-    current++;
-    _prefs!.setInt('txn_counter', current);
-    return 'TXN-${current.toString().padLeft(5, '0')}';
   }
 
   static void userAction(String name, [Map<String, dynamic>? params]) =>
@@ -104,9 +108,9 @@ class LoggerService {
 
   static Future<void> shareLogFile() async {
     try {
+      if (_logDirPath == null) return;
       final now = DateTime.now();
-      final directory = await getApplicationDocumentsDirectory();
-      final logFile = File('${directory.path}/logs/${_fileDatePrefix.format(now)}.log');
+      final logFile = File('$_logDirPath/${_fileDatePrefix.format(now)}.log');
       if (await logFile.exists()) {
         await Share.shareXFiles([XFile(logFile.path)], text: 'سجل حركات Aimex');
       }
