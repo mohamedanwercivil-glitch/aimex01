@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../data/inventory_store.dart';
+import 'inventory_adjustments_screen.dart';
 
 class InventoryScreen extends StatefulWidget {
   const InventoryScreen({super.key});
@@ -87,11 +88,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
               final newQty = double.tryParse(qtyController.text) ?? 0.0;
               final newPrice = double.tryParse(priceController.text) ?? 0.0;
               
-              InventoryStore.updateItem(name, newQty, newPrice);
+              InventoryStore.updateItem(name, newQty, newPrice, logAdjustment: true);
               Navigator.pop(context);
               _refresh();
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('تم تحديث بيانات الصنف بنجاح')),
+                const SnackBar(content: Text('تم تحديث بيانات الصنف وتسجيل التعديل')),
               );
             },
             child: const Text('حفظ التعديلات'),
@@ -106,12 +107,24 @@ class _InventoryScreenState extends State<InventoryScreen> {
     final totalValue = _calculateTotalInventoryValue();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('جرد المخزن')),
+      appBar: AppBar(
+        title: const Text('جرد المخزن'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: 'تعديلات المخزن',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const InventoryAdjustmentsScreen()),
+            ).then((_) => _refresh()),
+          )
+        ],
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            // 💰 كارت إجمالي قيمة المخزن (تم تعديله لمنع الـ Overflow)
+            // 💰 كارت إجمالي قيمة المخزن
             Card(
               color: Colors.blue.shade900,
               elevation: 4,

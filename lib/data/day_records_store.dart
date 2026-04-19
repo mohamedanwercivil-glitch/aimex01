@@ -64,6 +64,9 @@ class DayRecordsStore {
         case 'transfer':
           for (var r in typeRecords) _reverseTransfer(r);
           break;
+        case 'inventory_adjustment':
+          for (var r in typeRecords) _reverseInventoryAdjustment(r);
+          break;
       }
     });
 
@@ -206,6 +209,15 @@ class DayRecordsStore {
       walletName: to == 'نقدي' ? null : to,
       allowNegative: true,
     );
+  }
+
+  static void _reverseInventoryAdjustment(Map<String, dynamic> record) {
+    final itemName = record['itemName'];
+    final oldQty = (record['oldQty'] as num).toDouble();
+    final oldPrice = (record['oldPrice'] as num).toDouble();
+    
+    // لإلغاء التعديل، نعيد الكمية والسعر لما قبل التعديل
+    InventoryStore.updateItem(itemName, oldQty, oldPrice);
   }
 
   static void deleteRecordsById(String id) {

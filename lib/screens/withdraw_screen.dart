@@ -53,8 +53,8 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('حذف المسحوب نهائياً؟'),
-        content: const Text('سيتم استرداد مبلغ المسحوب للخزنة وحذفه من السجلات. هل أنت متأكد؟'),
+        title: const Text('حذف السجل نهائياً؟'),
+        content: const Text('سيتم عكس تأثير المبلغ وحذفه من السجلات. هل أنت متأكد؟'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
           TextButton(
@@ -63,7 +63,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
               Navigator.pop(context); 
               if (widget.editWithdrawId != null) Navigator.pop(context);
               setState(() {});
-              ToastService.show('تم حذف المسحوب واسترداد المبلغ');
+              ToastService.show('تم الحذف بنجاح');
             },
             child: const Text('تأكيد الحذف', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
           ),
@@ -92,8 +92,8 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
     final source = selectedSource;
     final description = descriptionController.text.trim();
 
-    if (amount <= 0 || person == null || source == null) {
-      ToastService.show('الرجاء إدخال جميع البيانات بشكل صحيح');
+    if (amount == 0 || person == null || source == null) {
+      ToastService.show('الرجاء إدخال مبلغ صحيح (غير صفر) واختيار الشخص والمصدر');
       return;
     }
 
@@ -104,10 +104,14 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
         DayRecordsStore.reverseInvoiceEffects(widget.editWithdrawId!);
       }
 
+      // إذا كان المبلغ سالب، سيعتبره الـ withdraw طرحاً لسالب، أي إضافة.
+      // ولكن لضمان دقة الرسائل في FinanceService، نمرر allowNegative: true
       final result = FinanceService.withdraw(
         amount: amount,
         paymentType: source == 'نقدي' ? 'كاش' : 'تحويل',
         walletName: source == 'نقدي' ? null : source,
+        allowNegative: true, // للسماح بالإيداع أو السحب المكشوف
+        reason: amount > 0 ? 'مسحوبات شخصية: $person' : 'إيداع شخصي: $person',
       );
 
       if (!result.success) {
@@ -129,7 +133,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
         'date': DateTime.now().toString(),
       });
 
-      ToastService.show(widget.editWithdrawId != null ? 'تم تعديل المسحوب' : 'تم تسجيل المسحوب');
+      ToastService.show(widget.editWithdrawId != null ? 'تم التعديل' : 'تم الحفظ');
 
       if (widget.editWithdrawId != null) {
         Navigator.pop(context);
@@ -161,7 +165,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.editWithdrawId != null ? 'تعديل مسحوب' : 'مسحوبات شخصية'),
+        title: Text(widget.editWithdrawId != null ? 'تعديل مسحوب/إيداع' : 'مسحوبات شخصية'),
       ),
       body: Column(
         children: [
@@ -171,7 +175,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
               children: [
                 DropdownButtonFormField<String>(
                   value: selectedSource,
-                  decoration: const InputDecoration(labelText: 'مصدر السحب', border: OutlineInputBorder()),
+                  decoration: const InputDecoration(labelText: 'مصدر السحب/الإيداع', border: OutlineInputBorder()),
                   items: sources.map((source) => DropdownMenuItem(value: source, child: Text(source))).toList(),
                   onChanged: (dayStarted && !_isSaving)
                       ? (value) => setState(() { selectedSource = value; _amountFocusNode.requestFocus(); })
@@ -182,8 +186,8 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
                   enabled: dayStarted && !_isSaving,
                   controller: amountController,
                   focusNode: _amountFocusNode,
-                  keyboardType: TextInputType.number,
-                  labelText: 'المبلغ',
+                  keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
+                  labelText: 'المبلغ (موجب للسحب، سالب للإيداع)',
                   textInputAction: TextInputAction.next,
                   onSubmitted: (_) => _descriptionFocusNode.requestFocus(),
                 ),
@@ -211,7 +215,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
                   height: 50,
                   child: ElevatedButton(
                     onPressed: (dayStarted && !_isSaving) ? _saveWithdraw : null,
-                    child: _isSaving ? const CircularProgressIndicator(color: Colors.white) : const Text('حفظ المسحوب'),
+                    child: _isSaving ? const CircularProgressIndicator(color: Colors.white) : const Text('حفظ'),
                   ),
                 ),
               ],
@@ -220,21 +224,27 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
           const Divider(thickness: 2),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
-            child: Text('سجل مسحوبات اليوم', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            child: Text('سجل الحركة المالية للأشخاص اليوم', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           ),
           Expanded(
             child: ListView.builder(
               itemCount: todayWithdrawals.length,
               itemBuilder: (context, index) {
                 final withdrawal = todayWithdrawals[index];
+                final amount = (withdrawal['amount'] as num).toDouble();
+                final isWithdraw = amount > 0;
                 final time = DateFormat('hh:mm a').format(DateTime.parse(withdrawal['date'] ?? withdrawal['time']));
+                
                 return Card(
                   margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                   child: ListTile(
                     dense: true,
-                    leading: const Icon(Icons.account_balance_wallet, color: Colors.brown),
+                    leading: Icon(
+                      isWithdraw ? Icons.upload : Icons.download, 
+                      color: isWithdraw ? Colors.red : Colors.green
+                    ),
                     title: Text('${withdrawal['person']}'),
-                    subtitle: Text('المبلغ: ${withdrawal['amount']} | المصدر: ${withdrawal['source']} | $time'),
+                    subtitle: Text('${isWithdraw ? 'سحب' : 'إيداع'}: ${amount.abs()} | المصدر: ${withdrawal['source']} | $time'),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [

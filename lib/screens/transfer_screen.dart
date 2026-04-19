@@ -50,7 +50,7 @@ class _TransferScreenState extends State<TransferScreen> {
         amountController.text = (record['amount'] ?? 0).toString();
         feeController.text = (record['fee'] ?? 0).toString();
       });
-      LoggerService.logicEffect('تم تحميل بيانات التحويل للتعديل', {'id': id, 'من': fromBox, 'إلى': toBox});
+      LoggerService.logicStep('تم تحميل بيانات التحويل للتعديل', data: {'id': id, 'من': fromBox, 'إلى': toBox});
     } catch (e) {
       LoggerService.error('فشل تحميل بيانات التحويل للتعديل', error: e);
     }
@@ -131,7 +131,7 @@ class _TransferScreenState extends State<TransferScreen> {
       double balanceToBefore = CashState.instance.getBalance(toBox!);
 
       if (widget.editTransferId != null) {
-        LoggerService.logicEffect('تعديل تحويل: عكس الأثر القديم', {'id': widget.editTransferId});
+        LoggerService.logicStep('تعديل تحويل: عكس الأثر القديم', data: {'id': widget.editTransferId});
         DayRecordsStore.reverseInvoiceEffects(widget.editTransferId!);
       }
 
@@ -154,7 +154,7 @@ class _TransferScreenState extends State<TransferScreen> {
         } else {
           CashState.instance.withdrawFromWallet(fromBox!, fee);
         }
-        LoggerService.logicEffect('تم خصم رسوم التحويل', {'القيمة': fee});
+        LoggerService.logicStep('تم خصم رسوم التحويل', data: {'القيمة': fee});
       }
 
       const uuid = Uuid();

@@ -31,11 +31,14 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   final priceController = TextEditingController();
   final paidAmountController = TextEditingController();
   final discountController = TextEditingController();
+  final additionalExpensesController = TextEditingController(); // خانة مصاريف إضافية
+
   final _supplierFocusNode = FocusNode();
   final _itemFocusNode = FocusNode();
   final _qtyFocusNode = FocusNode();
   final _priceFocusNode = FocusNode();
   final _discountFocusNode = FocusNode();
+  final _additionalExpensesFocusNode = FocusNode(); // فوكس للمصاريف الإضافية
   final _paidAmountFocusNode = FocusNode();
 
   final secondPaidAmountController = TextEditingController();
@@ -58,7 +61,8 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
 
   double get subtotal => items.fold(0, (sum, item) => sum + item.total);
   double get discount => double.tryParse(discountController.text) ?? 0.0;
-  double get total => subtotal - discount;
+  double get additionalExpenses => double.tryParse(additionalExpensesController.text) ?? 0.0;
+  double get total => subtotal - discount + additionalExpenses; // الإجمالي شامل المصاريف الإضافية
 
   double currentSupplierBalance = 0.0;
 
@@ -84,6 +88,10 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       _saveDraft();
     });
     discountController.addListener(() {
+      setState(() {});
+      _saveDraft();
+    });
+    additionalExpensesController.addListener(() {
       setState(() {});
       _saveDraft();
     });
@@ -118,6 +126,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
           final savedWallet = first['wallet'];
           selectedWallet = (savedWallet == 'نقدي' || savedWallet == '') ? null : savedWallet;
           discountController.text = (first['discount'] ?? 0).toString();
+          additionalExpensesController.text = (first['additionalExpenses'] ?? 0).toString();
           paidAmountController.text = (first['paidAmount'] ?? 0).toString();
           originalInvoiceNumber = first['invoiceNumber']?.toString();
 
@@ -145,7 +154,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   }
 
   String _getCurrentDataString() {
-    return "${supplierController.text}-${paymentType}-${selectedWallet}-${discountController.text}-${paidAmountController.text}-${showSecondPayment}-${secondPaidAmountController.text}-${items.map((e) => e.name + e.qty.toString() + e.price.toString()).join()}";
+    return "${supplierController.text}-${paymentType}-${selectedWallet}-${discountController.text}-${additionalExpensesController.text}-${paidAmountController.text}-${showSecondPayment}-${secondPaidAmountController.text}-${items.map((e) => e.name + e.qty.toString() + e.price.toString()).join()}";
   }
 
   void _loadDraft() {
@@ -156,6 +165,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
         paymentType = draft['paymentType'] ?? 'كاش';
         selectedWallet = (draft['wallet'] == 'نقدي') ? null : draft['wallet'];
         discountController.text = draft['discount'] ?? '0';
+        additionalExpensesController.text = draft['additionalExpenses'] ?? '0';
         paidAmountController.text = draft['paidAmount'] ?? '0';
         
         showSecondPayment = draft['showSecondPayment'] ?? false;
@@ -175,6 +185,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     } else {
       paidAmountController.text = '0';
       discountController.text = '0';
+      additionalExpensesController.text = '0';
       secondPaidAmountController.text = '0';
       showSecondPayment = false;
     }
@@ -190,6 +201,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       paidAmount: paidAmountController.text,
       items: items.map((e) => {'name': e.name, 'qty': e.qty, 'price': e.price, 'isReturn': e.isReturn}).toList(),
       extra: {
+        'additionalExpenses': additionalExpensesController.text,
         'showSecondPayment': showSecondPayment,
         'secondPaidAmount': secondPaidAmountController.text,
         'secondPaymentType': secondPaymentType,
@@ -232,23 +244,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
           TextButton(
             onPressed: () {
               LoggerService.userAction('مسح بيانات الفاتورة الحالية (Reset)');
-              setState(() {
-                items.clear();
-                supplierController.clear();
-                itemController.clear();
-                qtyController.clear();
-                priceController.clear();
-                paidAmountController.text = '0';
-                discountController.text = '0';
-                secondPaidAmountController.text = '0';
-                showSecondPayment = false;
-                paymentType = 'كاش';
-                selectedWallet = null;
-                originalInvoiceNumber = null;
-                _isReturnMode = false;
-                currentSupplierBalance = 0.0;
-              });
-              DraftStore.clearPurchasesDraft();
+              _clearAllFields();
               Navigator.pop(context);
               ToastService.show('تم مسح الفاتورة بنجاح');
             },
@@ -259,6 +255,28 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     );
   }
 
+  void _clearAllFields() {
+    setState(() {
+      items.clear();
+      supplierController.clear();
+      itemController.clear();
+      qtyController.clear();
+      priceController.clear();
+      paidAmountController.text = '0';
+      discountController.text = '0';
+      additionalExpensesController.text = '0';
+      secondPaidAmountController.text = '0';
+      showSecondPayment = false;
+      paymentType = 'كاش';
+      selectedWallet = null;
+      originalInvoiceNumber = null;
+      _isReturnMode = false;
+      currentSupplierBalance = 0.0;
+      editingIndex = null;
+    });
+    DraftStore.clearPurchasesDraft();
+  }
+
   @override
   void dispose() {
     supplierController.dispose();
@@ -267,12 +285,14 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     priceController.dispose();
     paidAmountController.dispose();
     discountController.dispose();
+    additionalExpensesController.dispose();
     secondPaidAmountController.dispose();
     _supplierFocusNode.dispose();
     _itemFocusNode.dispose();
     _qtyFocusNode.dispose();
     _priceFocusNode.dispose();
     _discountFocusNode.dispose();
+    _additionalExpensesFocusNode.dispose();
     _paidAmountFocusNode.dispose();
     _secondPaidAmountFocusNode.dispose();
     _scrollController.dispose();
@@ -403,12 +423,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     final supplierName = supplierController.text.trim();
 
     try {
-      if (widget.editInvoiceId != null) {
-        LoggerService.logicEffect('تعديل فاتورة: عكس الأثر القديم في لحظة الحفظ فقط', {'id': widget.editInvoiceId});
-        DayRecordsStore.reverseInvoiceEffects(widget.editInvoiceId!);
-        await Future.delayed(const Duration(milliseconds: 50));
-      }
-
+      // 1. التحقق من القدرة المالية أولاً
       if (p1 > 0) {
         final check1 = FinanceService.withdraw(amount: p1, paymentType: paymentType, walletName: paymentType == 'تحويل' ? selectedWallet : null, dryRun: true);
         if (!check1.success) {
@@ -426,32 +441,19 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
         }
       }
 
-      if (p1 > 0) {
-        FinanceService.withdraw(amount: p1, paymentType: paymentType, walletName: paymentType == 'تحويل' ? selectedWallet : null);
-      }
-      if (p2 > 0) {
-        FinanceService.withdraw(amount: p2, paymentType: secondPaymentType, walletName: secondPaymentType == 'تحويل' ? secondSelectedWallet : null);
-      }
-
-      for (final item in items) {
-        if (item.isReturn) {
-          InventoryStore.sellItem(item.name, item.qty);
-        } else {
-          InventoryStore.addItem(item.name, item.qty, item.price);
-        }
+      // 2. عكس الأثر القديم إذا كان تعديل
+      if (widget.editInvoiceId != null) {
+        DayRecordsStore.reverseInvoiceEffects(widget.editInvoiceId!);
+        await Future.delayed(const Duration(milliseconds: 50));
       }
 
-      SupplierStore.addSupplier(supplierName);
-      final invoiceDue = total - p1;
-      SupplierStore.updateBalance(supplierName, invoiceDue);
-      if (p2 != 0) {
-        SupplierStore.updateBalance(supplierName, -p2);
-      }
-
+      // 3. تجهيز بيانات الفاتورة
       final invoiceNumber = originalInvoiceNumber ?? DayRecordsStore.getNextInvoiceNumber('purchase').toString();
       const uuid = Uuid();
       final invoiceId = uuid.v4();
+      final invoiceDue = total - p1;
 
+      // 4. الحفظ في السجلات أولاً (قبل التغيير المالي)
       for (final item in items) {
         DayRecordsStore.addRecord({
           'type': 'purchase',
@@ -470,6 +472,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
           'dueAmount': invoiceDue,
           'time': DateTime.now().toString(),
           'discount': discount,
+          'additionalExpenses': additionalExpenses, // حفظ المصاريف الإضافية
         });
       }
 
@@ -486,34 +489,51 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
         });
       }
 
+      // 5. تنفيذ الأثر المالي والمخزني
+      if (p1 > 0) {
+        FinanceService.withdraw(amount: p1, paymentType: paymentType, walletName: paymentType == 'تحويل' ? selectedWallet : null);
+      }
+      if (p2 > 0) {
+        FinanceService.withdraw(amount: p2, paymentType: secondPaymentType, walletName: secondPaymentType == 'تحويل' ? secondSelectedWallet : null);
+      }
+
+      for (final item in items) {
+        if (item.isReturn) {
+          InventoryStore.sellItem(item.name, item.qty);
+        } else {
+          InventoryStore.addItem(item.name, item.qty, item.price);
+        }
+      }
+
+      SupplierStore.addSupplier(supplierName);
+      SupplierStore.updateBalance(supplierName, invoiceDue);
+      if (p2 != 0) {
+        SupplierStore.updateBalance(supplierName, -p2);
+      }
+
       context.read<DayState>().addPurchase(subtotal, discount: discount);
 
-      DraftStore.clearPurchasesDraft();
+      // 6. المسح النهائي فقط بعد النجاح
+      _clearAllFields();
+      
       if (widget.editInvoiceId != null) {
         Navigator.pop(context);
       } else {
-        setState(() {
-          items.clear();
-          supplierController.clear();
-          itemController.clear();
-          qtyController.clear();
-          priceController.clear();
-          paidAmountController.text = '0';
-          secondPaidAmountController.text = '0';
-          discountController.text = '0';
-          editingIndex = null;
-          selectedWallet = null;
-          paymentType = 'كاش';
-          showSecondPayment = false;
-          _isReturnMode = false;
-          currentSupplierBalance = 0.0;
-        });
         _supplierFocusNode.requestFocus();
       }
       ToastService.show('تم حفظ الفاتورة بنجاح');
     } catch (e, stack) {
       LoggerService.error('خطأ قاتل أثناء حفظ فاتورة المشتريات', error: e, stackTrace: stack);
-      ToastService.show('حدث خطأ أثناء الحفظ');
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('خطأ في الحفظ'),
+          content: Text('حدث خطأ غير متوقع: $e\n\nالبيانات لم تضيع ومازالت موجودة في الشاشة.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('حسناً')),
+          ],
+        ),
+      );
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -813,6 +833,23 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                     focusNode: _discountFocusNode,
                     controller: discountController,
                     labelText: 'الخصم',
+                    keyboardType: TextInputType.number,
+                    onSubmitted: (_) => _additionalExpensesFocusNode.requestFocus(),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('مصاريف إضافية:', style: TextStyle(fontSize: 16)),
+                SizedBox(
+                  width: 100,
+                  child: SelectableTextField(
+                    focusNode: _additionalExpensesFocusNode,
+                    controller: additionalExpensesController,
+                    labelText: 'مصاريف',
                     keyboardType: TextInputType.number,
                     onSubmitted: (_) => _paidAmountFocusNode.requestFocus(),
                   ),

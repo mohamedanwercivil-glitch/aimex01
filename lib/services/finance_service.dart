@@ -42,7 +42,8 @@ class FinanceService {
   }) {
     if (paymentType == 'كاش' || paymentType == 'نقدي') {
       final currentCash = CashState.instance.cash;
-      if (!allowNegative && currentCash < amount) {
+      // السماح بالمبالغ السالبة (إيداع) أو التحقق من الرصيد إذا كان سحب
+      if (!allowNegative && amount > 0 && currentCash < amount) {
         return FinanceResult(false, 
           'عذراً، الرصيد النقدي غير كافي.\nالمطلوب: $amount | المتاح: $currentCash');
       }
@@ -58,7 +59,7 @@ class FinanceService {
       }
 
       final currentWalletBalance = CashState.instance.wallets[walletName] ?? 0;
-      if (!allowNegative && currentWalletBalance < amount) {
+      if (!allowNegative && amount > 0 && currentWalletBalance < amount) {
         return FinanceResult(false, 
           'رصيد محفظة ($walletName) غير كافي.\nالمطلوب: $amount | المتاح: $currentWalletBalance');
       }

@@ -45,7 +45,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         descriptionController.text = record['description'] ?? '';
         selectedWallet = record['wallet'] ?? 'نقدي';
       });
-      LoggerService.logicEffect('تم تحميل بيانات المصروف للتعديل', {'id': id, 'بيان': descriptionController.text});
+      LoggerService.logicStep('تم تحميل بيانات المصروف للتعديل', data: {'id': id, 'بيان': descriptionController.text});
     } catch (e) {
       LoggerService.error('فشل تحميل بيانات المصروف للتعديل', error: e);
     }
@@ -105,7 +105,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
     try {
       if (widget.editExpenseId != null) {
-        LoggerService.logicEffect('تعديل مصروف: عكس الأثر القديم', {'id': widget.editExpenseId});
+        LoggerService.logicStep('تعديل مصروف: عكس الأثر القديم', data: {'id': widget.editExpenseId});
         DayRecordsStore.reverseInvoiceEffects(widget.editExpenseId!);
       }
 
@@ -135,7 +135,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       });
 
       DayState.instance.addExpense(amount);
-      LoggerService.logicEffect('تم تسجيل المصروف وتحديث إحصائيات اليوم');
+      LoggerService.logicStep('تم تسجيل المصروف وتحديث إحصائيات اليوم');
       
       ToastService.show(widget.editExpenseId != null ? 'تم تعديل المصروف' : 'تم تسجيل المصروف');
 

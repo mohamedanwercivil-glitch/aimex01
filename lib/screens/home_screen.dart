@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../state/day_state.dart';
@@ -15,10 +16,47 @@ import 'settlement_screen.dart';
 import 'supplier_settlement_screen.dart';
 import 'settings/import_screen.dart';
 import 'account_statement_screen.dart';
+import 'snapshots_screen.dart';
 import '../services/logger_service.dart';
+import '../services/backup_service.dart';
+import '../services/background_service.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  Timer? _backupTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkPermissionsAndStartTasks();
+  }
+
+  Future<void> _checkPermissionsAndStartTasks() async {
+    // طلب استثناء توفير البطارية لضمان العمل في الخلفية بدقة
+    await BackgroundService.requestBatteryOptimizationExemption();
+    _startAutoBackupSequence();
+  }
+
+  void _startAutoBackupSequence() {
+    _backupTimer?.cancel();
+    _backupTimer = Timer.periodic(const Duration(minutes: 30), (timer) {
+      if (context.read<DayState>().dayStarted) {
+        BackupService.createAutoSnapshot();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _backupTimer?.cancel();
+    super.dispose();
+  }
 
   void _showEndDayConfirmation(BuildContext context) {
     showDialog(
@@ -81,6 +119,13 @@ class HomeScreen extends StatelessWidget {
                           Icons.wb_sunny,
                           Colors.teal,
                           const StartDayScreen(),
+                          onTap: () async {
+                            await BackupService.clearAllSnapshots();
+                            await BackupService.createAutoSnapshot();
+                            if (mounted) {
+                              Navigator.push(context, MaterialPageRoute(builder: (_) => const StartDayScreen()));
+                            }
+                          }
                         ),
                       if (!dayStarted) const SizedBox(height: 16),
 
@@ -129,29 +174,8 @@ class HomeScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 24),
 
-                      if (dayStarted)
-                        _buildFullWidthButton(
-                          context, 
-                          'إنهاء اليوم', 
-                          Icons.done_all, 
-                          Colors.red.shade700, 
-                          null, // لا نمرر شاشة لأننا سنفتح Dialog
-                          onTap: () => _showEndDayConfirmation(context),
-                        ),
-                      const SizedBox(height: 12),
-                      
                       Row(
                         children: [
-                           Expanded(
-                             child: _buildActionButton(
-                               context, 
-                               'استيراد', 
-                               Icons.file_upload, 
-                               Colors.grey.shade700, 
-                               const ImportScreen(),
-                             ),
-                           ),
-                           const SizedBox(width: 12),
                            Expanded(
                              child: _buildActionButton(
                                context, 
@@ -162,8 +186,39 @@ class HomeScreen extends StatelessWidget {
                                onTap: () => LoggerService.shareLogFile(),
                              ),
                            ),
+                           const SizedBox(width: 12),
+                           Expanded(
+                             child: _buildActionButton(
+                               context, 
+                               'تصدير و استيراد النسخ الاحتياطيه', 
+                               Icons.sync, 
+                               Colors.grey.shade700, 
+                               const ImportScreen(),
+                             ),
+                           ),
                         ],
                       ),
+                      const SizedBox(height: 12),
+
+                      _buildFullWidthButton(
+                        context, 
+                        'النسخ التلقائية (Snapshot)', 
+                        Icons.history, 
+                        Colors.orange.shade900, 
+                        const SnapshotsScreen(),
+                      ),
+                      const SizedBox(height: 12),
+
+                      if (dayStarted)
+                        _buildFullWidthButton(
+                          context, 
+                          'إنهاء اليوم', 
+                          Icons.done_all, 
+                          Colors.red.shade700, 
+                          null, 
+                          onTap: () => _showEndDayConfirmation(context),
+                        ),
+                      const SizedBox(height: 20),
                     ],
                   ),
                 ),

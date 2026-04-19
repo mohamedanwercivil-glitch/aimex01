@@ -8,6 +8,7 @@ import '../../data/customer_store.dart';
 import '../../models/sale_item.dart';
 import '../../services/pdf_service.dart';
 import '../../services/toast_service.dart';
+import '../../services/logger_service.dart';
 import 'new_sale_screen.dart';
 
 class DailyInvoicesScreen extends StatefulWidget {
@@ -47,41 +48,70 @@ class _DailyInvoicesScreenState extends State<DailyInvoicesScreen> {
     try {
       final allRecords = DayRecordsStore.getAll();
       final invoiceRecords = allRecords.where((r) => r['invoiceId'] == invoiceId).toList();
-      if (invoiceRecords.isEmpty) return;
+      
+      // تصفية السجلات لاستخراج سجلات المبيعات فقط (الأصناف)
+      final saleRecords = invoiceRecords.where((r) => r['type'] == 'sale').toList();
+      
+      if (saleRecords.isEmpty) {
+        ToastService.show('لم يتم العثور على بيانات المبيعات لهذه الفاتورة');
+        return;
+      }
 
-      final first = invoiceRecords.first;
-      final customerName = first['customer'];
+      final first = saleRecords.first;
+      final customerName = first['customer'] ?? 'عميل غير معروف';
       final invoiceNumber = first['invoiceNumber']?.toString() ?? '0';
       
-      final List<SaleItem> items = invoiceRecords.map((e) => SaleItem(
-        name: e['item'],
-        qty: (e['qty'] as num).toDouble(),
-        price: (e['price'] as num).toDouble(),
+      // تحويل السجلات إلى كائنات SaleItem مع التأكد من عدم وجود قيم فارغة
+      final List<SaleItem> items = saleRecords.map((e) => SaleItem(
+        name: e['item'] ?? 'صنف غير معروف',
+        qty: (e['qty'] as num? ?? 0).toDouble(),
+        price: (e['price'] as num? ?? 0).toDouble(),
         isReturn: e['isReturn'] ?? false,
       )).toList();
+
+      final discount = (first['discount'] as num? ?? 0).toDouble();
+      final invoiceTotal = (first['invoiceTotal'] as num? ?? 0).toDouble();
+      final paidAmount = (first['paidAmount'] as num? ?? 0).toDouble();
+      final dueAmount = (first['dueAmount'] as num? ?? 0).toDouble();
+      final expenses = (first['additionalExpenses'] as num? ?? 0).toDouble();
+
+      // حساب المجموع الفرعي قبل الخصم والمصاريف
+      final calculatedSubtotal = items.fold(0.0, (sum, item) => sum + item.total);
+
+      // جلب سجلات السداد المرتبطة بهذه الفاتورة (إن وجدت)
+      final settlementRecords = invoiceRecords.where((r) => r['type'] == 'settlement').toList();
+      final totalSecondaryPaid = settlementRecords.fold(0.0, (sum, e) => sum + (e['amount'] as num? ?? 0).toDouble());
+      
+      final totalCollected = paidAmount + totalSecondaryPaid;
+      
+      // حساب الرصيد
+      final currentBal = CustomerStore.getBalance(customerName);
+      // الأثر الصافي لهذه الفاتورة على حساب العميل
+      final netInvoiceEffect = invoiceTotal - totalCollected;
 
       final pdfData = await PdfService.generateInvoice(
         customerName: customerName,
         items: items,
-        subtotal: (first['invoiceTotal'] as num).toDouble() + (first['discount'] as num? ?? 0).toDouble(),
-        discount: (first['discount'] as num? ?? 0).toDouble(),
-        total: (first['invoiceTotal'] as num).toDouble(),
-        paidAmount: (first['paidAmount'] as num).toDouble(),
-        dueAmount: (first['dueAmount'] as num).toDouble(),
+        subtotal: calculatedSubtotal,
+        discount: discount,
+        total: invoiceTotal,
+        paidAmount: totalCollected,
+        dueAmount: netInvoiceEffect,
         invoiceId: invoiceNumber,
-        previousBalance: CustomerStore.getBalance(customerName) - (first['dueAmount'] as num).toDouble(),
-        newBalance: CustomerStore.getBalance(customerName),
+        previousBalance: currentBal - netInvoiceEffect,
+        newBalance: currentBal,
       );
 
-      final dateStr = DateFormat('d-M-yyyy').format(DateTime.parse(first['time'] ?? DateTime.now().toString()));
-      final fileName = '$customerName $dateStr.pdf';
+      final dateStr = DateFormat('d-M-yyyy').format(DateTime.tryParse(first['time'] ?? '') ?? DateTime.now());
+      final fileName = '${customerName}_$dateStr.pdf';
       final tempDir = await getTemporaryDirectory();
       final file = File('${tempDir.path}/$fileName');
       await file.writeAsBytes(pdfData);
 
       await Share.shareXFiles([XFile(file.path)], text: 'فاتورة بيع - $customerName');
-    } catch (e) {
-      ToastService.show('حدث خطأ أثناء توليد الفاتورة');
+    } catch (e, stack) {
+      LoggerService.error('خطأ أثناء توليد PDF من شاشة الفواتير', error: e, stackTrace: stack);
+      ToastService.show('حدث خطأ فني أثناء توليد الفاتورة');
     } finally {
       setState(() => _isGeneratingPdf = false);
     }

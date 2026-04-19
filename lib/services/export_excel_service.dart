@@ -46,6 +46,34 @@ class ExportExcelService {
     };
   }
 
+  static String _formatTime(dynamic dateTimeStr) {
+    if (dateTimeStr == null) return '';
+    try {
+      final dt = DateTime.parse(dateTimeStr.toString());
+      return DateFormat('hh:mm:ss a').format(dt);
+    } catch (_) {
+      String s = dateTimeStr.toString();
+      if (s.contains(' ')) {
+        final parts = s.split(' ');
+        if (parts.length > 1) return parts[1].split('.')[0];
+      } else if (s.contains('T')) {
+        final parts = s.split('T');
+        if (parts.length > 1) return parts[1].split('.')[0];
+      }
+      return s;
+    }
+  }
+
+  static String _formatDate(dynamic dateTimeStr) {
+    if (dateTimeStr == null) return '';
+    try {
+      final dt = DateTime.parse(dateTimeStr.toString());
+      return DateFormat('yyyy-MM-dd').format(dt);
+    } catch (_) {
+      return dateTimeStr.toString().split('T')[0].split(' ')[0];
+    }
+  }
+
   static Future<String> generateAllInvoicesZip(String targetDirPath) async {
     if (targetDirPath.isEmpty) return "";
     final dayStartTime = DayState.instance.dayStartTime ?? DateTime.now();
@@ -89,7 +117,7 @@ class ExportExcelService {
       final pdfData = await PdfService.generateInvoice(
         customerName: customer,
         items: saleItems,
-        subtotal: (first['invoiceTotal'] as num).toDouble() + (first['discount'] as num).toDouble(),
+        subtotal: (first['invoiceTotal'] as num).toDouble() + (first['discount'] as num).toDouble() - (first['additionalExpenses'] ?? 0).toDouble(),
         discount: (first['discount'] as num).toDouble(),
         total: (first['invoiceTotal'] as num).toDouble(),
         paidAmount: primaryPaid + secondaryPaid,
@@ -158,7 +186,24 @@ class ExportExcelService {
       newItemsSheet.appendRow([item['name']]);
     }
 
-    // --- 2. الموردين الجدد ---
+    // --- 2. تعديلات المخزن --- (تم النقل لهنا بطلب المستخدم)
+    var adjustmentsSheet = excel['تعديلات المخزن'];
+    adjustmentsSheet.appendRow(['اسم الصنف', 'الكمية القديمة', 'الكمية الجديدة', 'الفرق', 'السعر القديم', 'السعر الجديد', 'الوقت']);
+    for (var r in records.where((e) => e['type'] == 'inventory_adjustment')) {
+      final oldQty = (r['oldQty'] as num).toDouble();
+      final newQty = (r['newQty'] as num).toDouble();
+      adjustmentsSheet.appendRow([
+        r['itemName'] ?? '',
+        oldQty,
+        newQty,
+        newQty - oldQty,
+        r['oldPrice'] ?? 0,
+        r['newPrice'] ?? 0,
+        _formatTime(r['date'] ?? r['time'])
+      ]);
+    }
+
+    // --- 3. الموردين الجدد ---
     var newSuppliersSheet = excel['الموردين الجدد'];
     newSuppliersSheet.appendRow(['اسم المورد']);
     var newSuppliers = SupplierStore.getNewSuppliersToday(dayStartTime);
@@ -166,7 +211,7 @@ class ExportExcelService {
       newSuppliersSheet.appendRow([name]);
     }
 
-    // --- 3. التحويلات ---
+    // --- 4. التحويلات ---
     var transfersSheet = excel['التحويلات'];
     transfersSheet.appendRow(['من محفظة', 'إلى محفظة', 'المبلغ', 'مصاريف التحويل', 'الوقت']);
     for (var r in records.where((e) => e['type'] == 'transfer')) {
@@ -175,11 +220,11 @@ class ExportExcelService {
         r['to'] ?? 'نقدي',
         r['amount'],
         r['fee'] ?? 0,
-        r['time']?.toString().split('T')[1].split('.')[0] ?? ''
+        _formatTime(r['time'])
       ]);
     }
 
-    // --- 4. سداد الموردين ---
+    // --- 5. سداد الموردين ---
     var supplierSettlement = excel['سداد الموردين'];
     supplierSettlement.appendRow(['المورد', 'المبلغ', 'الخزنة', 'ملاحظات']);
     for (var r in records.where((e) => e['type'] == 'supplier_settlement')) {
@@ -194,16 +239,16 @@ class ExportExcelService {
       if (!skip) supplierSettlement.appendRow([r['supplier'], r['amount'], r['wallet'], r['remarks'] ?? '']);
     }
 
-    // --- 5. المشتريات أوتو ---
+    // --- 6. المشتريات أوتو ---
     var purchaseAutoSheet = excel['المشتريات أوتو'];
-    purchaseAutoSheet.appendRow(['اسم مورد', 'اسم الصنف', 'الكميه', 'سعر الوحده', 'الخزنه', 'المدفوع', 'الخصم']);
+    purchaseAutoSheet.appendRow(['اسم مورد', 'اسم الصنف', 'الكميه', 'سعر الوحده', 'الخزنه', 'المدفوع', 'الخصم', 'مصاريف إضافية']);
     for (final invoiceItems in purchasesByInvoice.values) {
       final nonReturnItems = invoiceItems.where((item) => item['isReturn'] != true).toList();
       if (nonReturnItems.isEmpty) continue;
       final first = invoiceItems.first;
       final invoiceId = first['invoiceId'];
       for (var item in nonReturnItems) {
-        purchaseAutoSheet.appendRow([item['supplier'], item['item'], item['qty'], item['price'], '', '', '']);
+        purchaseAutoSheet.appendRow([item['supplier'], item['item'], item['qty'], item['price'], '', '', '', '']);
       }
       final primaryPaid = (first['paidAmount'] as num).toDouble();
       final secondaryPaid = getSecondaryAmount(invoiceId, 'supplier_settlement');
@@ -226,10 +271,10 @@ class ExportExcelService {
           displayWallet = (rawPT == 'كاش' ? 'نقدي' : (first['wallet'] ?? ''));
         }
       }
-      purchaseAutoSheet.appendRow(['', '', '', '', displayWallet, displayPaid, first['discount'] ?? 0]);
+      purchaseAutoSheet.appendRow(['', '', '', '', displayWallet, displayPaid, first['discount'] ?? 0, first['additionalExpenses'] ?? 0]);
     }
 
-    // --- 6. المشتريات (التفصيلي) ---
+    // --- 7. المشتريات (التفصيلي) ---
     var purchasesSheet = excel['المشتريات'];
     for (final invoiceItems in purchasesByInvoice.values) {
       if (invoiceItems.isEmpty) continue;
@@ -240,11 +285,10 @@ class ExportExcelService {
       final totalPaid = primaryPaid + secondaryPaid;
 
       purchasesSheet.appendRow(['رقم الفاتورة', first['invoiceNumber']]);
-      purchasesSheet.appendRow(['التاريخ', first['time']?.toString().split('T')[0] ?? '']);
+      purchasesSheet.appendRow(['التاريخ', _formatDate(first['time'])]);
       purchasesSheet.appendRow(['إسم المورد', first['supplier']]);
-      purchasesSheet.appendRow(['إجمالي الفاتورة', (first['invoiceTotal'] as num).toDouble() + (first['discount'] as num).toDouble()]);
+      purchasesSheet.appendRow(['إجمالي الفاتورة', (first['invoiceTotal'] as num).toDouble() + (first['discount'] as num).toDouble() - (first['additionalExpenses'] ?? 0).toDouble()]);
       
-      // 🔥 تعديل المنطق هنا ليكون اللقب "طريقة الدفع" إذا كانت واحدة فقط
       bool isMulti = primaryPaid > 0 && secondaryPaid > 0;
 
       if (primaryPaid > 0 || (primaryPaid == 0 && secondaryPaid == 0)) {
@@ -262,6 +306,7 @@ class ExportExcelService {
       }
       purchasesSheet.appendRow(['إجمالي المدفوع', totalPaid]);
       purchasesSheet.appendRow(['الخصم', first['discount'] ?? 0]);
+      purchasesSheet.appendRow(['مصاريف إضافية', first['additionalExpenses'] ?? 0]);
       purchasesSheet.appendRow([]);
       purchasesSheet.appendRow(['الصنف', 'الكمية', 'سعر الوحدة', 'الإجمالي', 'الحالة']);
       for (var item in invoiceItems) {
@@ -270,7 +315,7 @@ class ExportExcelService {
       purchasesSheet.appendRow([]);
     }
 
-    // --- 7. العملاء الجدد ---
+    // --- 8. العملاء الجدد ---
     var newCustomersSheet = excel['العملاء الجدد'];
     newCustomersSheet.appendRow(['اسم العميل']);
     var newCustomers = CustomerStore.getNewCustomersToday(dayStartTime);
@@ -278,7 +323,7 @@ class ExportExcelService {
       newCustomersSheet.appendRow([name]);
     }
 
-    // --- 8. سداد العملاء ---
+    // --- 9. سداد العملاء ---
     var settlement = excel['سداد العملاء'];
     settlement.appendRow(['العميل', 'المبلغ', 'المحفظة', 'ملاحظات']);
     for (var r in records.where((e) => e['type'] == 'settlement')) {
@@ -293,7 +338,7 @@ class ExportExcelService {
       if (!skip) settlement.appendRow([r['customer'], r['amount'], r['wallet'], r['remarks'] ?? '']);
     }
 
-    // --- 9. المبيعات (التفصيلي) ---
+    // --- 10. المبيعات (التفصيلي) ---
     var salesSheet = excel['المبيعات'];
     for (final invoiceItems in salesByInvoice.values) {
       if (invoiceItems.isEmpty) continue;
@@ -304,9 +349,9 @@ class ExportExcelService {
       final totalPaid = primaryPaid + secondaryPaid;
 
       salesSheet.appendRow(['رقم الفاتورة', first['invoiceNumber']]);
-      salesSheet.appendRow(['التاريخ', first['time']?.toString().split('T')[0] ?? '']);
+      salesSheet.appendRow(['التاريخ', _formatDate(first['time'])]);
       salesSheet.appendRow(['إسم العميل', first['customer']]);
-      salesSheet.appendRow(['إجمالي الفاتورة', (first['invoiceTotal'] as num).toDouble() + (first['discount'] as num).toDouble()]);
+      salesSheet.appendRow(['إجمالي الفاتورة', (first['invoiceTotal'] as num).toDouble() + (first['discount'] as num).toDouble() - (first['additionalExpenses'] ?? 0).toDouble()]);
       
       bool isMulti = primaryPaid > 0 && secondaryPaid > 0;
 
@@ -325,6 +370,7 @@ class ExportExcelService {
       }
       salesSheet.appendRow(['إجمالي المدفوع', totalPaid]);
       salesSheet.appendRow(['الخصم', first['discount'] ?? 0]);
+      salesSheet.appendRow(['مصاريف إضافية', first['additionalExpenses'] ?? 0]);
       salesSheet.appendRow([]);
       salesSheet.appendRow(['الصنف', 'الكمية', 'سعر الوحدة', 'الإجمالي', 'الحالة']);
       for (var item in invoiceItems) {
@@ -333,16 +379,16 @@ class ExportExcelService {
       salesSheet.appendRow([]);
     }
 
-    // --- 10. المبيعات أوتو ---
+    // --- 11. المبيعات أوتو ---
     var salesAutoSheet = excel['المبيعات أوتو'];
-    salesAutoSheet.appendRow(['اسم عميل', 'اسم الصنف', 'الكميه', 'سعر الوحده', 'الخزنه', 'المدفوع', 'الخصم']);
+    salesAutoSheet.appendRow(['اسم عميل', 'اسم الصنف', 'الكميه', 'سعر الوحده', 'الخزنه', 'المدفوع', 'الخصم', 'مصاريف إضافية']);
     for (final invoiceItems in salesByInvoice.values) {
       final nonReturnItems = invoiceItems.where((item) => item['isReturn'] != true).toList();
       if (nonReturnItems.isEmpty) continue;
       final first = invoiceItems.first;
       final invoiceId = first['invoiceId'];
       for (var item in nonReturnItems) {
-        salesAutoSheet.appendRow([item['customer'], item['item'], item['qty'], item['price'], '', '', '']);
+        salesAutoSheet.appendRow([item['customer'], item['item'], item['qty'], item['price'], '', '', '', '']);
       }
       final primaryPaid = (first['paidAmount'] as num).toDouble();
       final secondaryPaid = getSecondaryAmount(invoiceId, 'settlement');
@@ -365,31 +411,31 @@ class ExportExcelService {
           displayWallet = (rawPT == 'كاش' ? 'نقدي' : (first['wallet'] ?? ''));
         }
       }
-      salesAutoSheet.appendRow(['', '', '', '', displayWallet, displayPaid, first['discount'] ?? 0]);
+      salesAutoSheet.appendRow(['', '', '', '', displayWallet, displayPaid, first['discount'] ?? 0, first['additionalExpenses'] ?? 0]);
     }
 
-    // --- 11. المرتجعات ---
+    // --- 12. المرتجعات ---
     var returnsSheet = excel['المرتجعات'];
     returnsSheet.appendRow(['المورد/العميل', 'الصنف', 'الكمية', 'السعر', 'الإجمالي', 'النوع']);
     for (var r in records.where((e) => (e['type'] == 'purchase' || e['type'] == 'sale' || e['type'] == 'sales_return') && e['isReturn'] == true)) {
       returnsSheet.appendRow([r['supplier'] ?? r['customer'], r['item'], r['qty'], r['price'], r['total'], r['type'] == 'purchase' ? 'مرتجع شراء' : 'مرتجع بيع']);
     }
 
-    // --- 12. المسحوبات الشخصية ---
+    // --- 13. المسحوبات الشخصية ---
     var withdrawSheet = excel['المسحوبات الشخصية'];
     withdrawSheet.appendRow(['المبلغ', 'الشخص', 'البيان', 'الخزنة']);
     for (var r in records.where((e) => e['type'] == 'withdraw')) {
       withdrawSheet.appendRow([r['amount'], r['person'] ?? '', r['description'] ?? r['reason'] ?? '', r['source'] ?? r['wallet'] ?? 'نقدي']);
     }
 
-    // --- 13. مصروفات الشغل ---
+    // --- 14. مصروفات الشغل ---
     var expenses = excel['مصروفات الشغل'];
     expenses.appendRow(['المبلغ', 'البيان', 'الخزنة']);
     for (var r in records.where((e) => e['type'] == 'expense')) {
       expenses.appendRow([r['amount'], r['description'] ?? r['reason'] ?? '', r['source'] ?? r['wallet'] ?? 'نقدي']);
     }
 
-    // --- 14. المخلص (نهاية الشيتات) ---
+    // --- 15. المخلص ---
     var summarySheet = excel['المخلص'];
     summarySheet.isRTL = true;
     summarySheet.appendRow(['البيان', 'التفاصيل', 'المبلغ']);
@@ -413,7 +459,7 @@ class ExportExcelService {
     double purTotalDisc = 0;
     for (final invoiceItems in purchasesByInvoice.values) {
       final first = invoiceItems.first;
-      purTotalVal += (first['invoiceTotal'] as num).toDouble() + (first['discount'] as num).toDouble();
+      purTotalVal += (first['invoiceTotal'] as num).toDouble() + (first['discount'] as num).toDouble() - (first['additionalExpenses'] ?? 0).toDouble();
       purTotalDisc += (first['discount'] as num).toDouble();
       final invoiceId = first['invoiceId'];
       purTotalPaid += (first['paidAmount'] as num).toDouble() + getSecondaryAmount(invoiceId, 'supplier_settlement');
@@ -430,7 +476,7 @@ class ExportExcelService {
     double saleTotalDisc = 0;
     for (final invoiceItems in salesByInvoice.values) {
       final first = invoiceItems.first;
-      saleTotalVal += (first['invoiceTotal'] as num).toDouble() + (first['discount'] as num).toDouble();
+      saleTotalVal += (first['invoiceTotal'] as num).toDouble() + (first['discount'] as num).toDouble() - (first['additionalExpenses'] ?? 0).toDouble();
       saleTotalDisc += (first['discount'] as num).toDouble();
       final invoiceId = first['invoiceId'];
       saleTotalReceived += (first['paidAmount'] as num).toDouble() + getSecondaryAmount(invoiceId, 'settlement');

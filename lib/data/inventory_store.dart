@@ -2,9 +2,10 @@ import 'dart:io';
 import 'package:excel/excel.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:hive/hive.dart';
-import 'package:intl/intl.dart';
+import 'package:uuid/uuid.dart';
 import '../utils/arabic_utils.dart';
 import '../services/logger_service.dart';
+import 'day_records_store.dart';
 
 class InventoryStore {
   static final Box box = Hive.box('inventoryBox');
@@ -111,8 +112,10 @@ class InventoryStore {
     );
   }
 
-  static void updateItem(String name, double newQty, double newPrice) {
-    double before = getItemQty(name);
+  static void updateItem(String name, double newQty, double newPrice, {bool logAdjustment = false}) {
+    double beforeQty = getItemQty(name);
+    double beforePrice = getItemBuyPrice(name);
+    
     final rawItem = box.get(name);
     if (rawItem == null) return;
 
@@ -128,12 +131,26 @@ class InventoryStore {
     });
     
     refreshCache();
-    double after = getItemQty(name);
+    double afterQty = getItemQty(name);
+    
+    if (logAdjustment) {
+      DayRecordsStore.addRecord({
+        'id': const Uuid().v4(),
+        'type': 'inventory_adjustment',
+        'itemName': name,
+        'oldQty': beforeQty,
+        'newQty': newQty,
+        'oldPrice': beforePrice,
+        'newPrice': newPrice,
+        'date': now,
+      });
+    }
+
     LoggerService.logInventoryChange(
       itemName: name,
-      qtyChange: after - before,
-      before: before,
-      after: after,
+      qtyChange: afterQty - beforeQty,
+      before: beforeQty,
+      after: afterQty,
       reason: "تحديث يدوي للكمية والسعر",
     );
   }
