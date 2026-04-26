@@ -423,7 +423,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     final supplierName = supplierController.text.trim();
 
     try {
-      // 1. عكس الأثر القديم أولاً في حالة التعديل لضمان توفر السيولة في الخزنة قبل الفحص
+      // 1. عكس الأثر القديم أولاً في حالة التعديل
       if (widget.editInvoiceId != null) {
         DayRecordsStore.reverseInvoiceEffects(widget.editInvoiceId!);
         await Future.delayed(const Duration(milliseconds: 50));
@@ -434,8 +434,6 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
         final check1 = FinanceService.withdraw(amount: p1, paymentType: paymentType, walletName: paymentType == 'تحويل' ? selectedWallet : null, dryRun: true);
         if (!check1.success) {
           ToastService.show('الدفعة الأولى: ${check1.message}');
-          // إذا فشلنا، نحتاج لرسالة خطأ وإيقاف الحفظ
-          // ملاحظة: بما أننا عكسنا الأثر، البيانات القديمة حُذفت، لكن الشاشة مازالت تحتفظ بالبيانات الحالية للحفظ
           setState(() => _isSaving = false);
           return;
         }
@@ -909,10 +907,17 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
               ),
             ],
             const SizedBox(height: 15),
-            if (!showSecondPayment)
+            if (!showSecondPayment && paymentType != 'آجل')
               Center(
                 child: TextButton.icon(
-                  onPressed: _isSaving ? null : () => setState(() => showSecondPayment = true),
+                  onPressed: _isSaving ? null : () {
+                    final p1 = double.tryParse(paidAmountController.text) ?? 0;
+                    if (p1 <= 0) {
+                      ToastService.show('من فضلك أدخل المبلغ في طريقة الدفع الأولى أولاً');
+                      return;
+                    }
+                    setState(() => showSecondPayment = true);
+                  },
                   icon: const Icon(Icons.add_circle_outline, color: Colors.blue),
                   label: const Text('إضافة طريقة دفع أخرى', style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
                 ),
