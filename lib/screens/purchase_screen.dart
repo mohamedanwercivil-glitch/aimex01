@@ -423,11 +423,19 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     final supplierName = supplierController.text.trim();
 
     try {
-      // 1. التحقق من القدرة المالية أولاً
+      // 1. عكس الأثر القديم أولاً في حالة التعديل لضمان توفر السيولة في الخزنة قبل الفحص
+      if (widget.editInvoiceId != null) {
+        DayRecordsStore.reverseInvoiceEffects(widget.editInvoiceId!);
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
+
+      // 2. التحقق من القدرة المالية الآن بعد استعادة السيولة
       if (p1 > 0) {
         final check1 = FinanceService.withdraw(amount: p1, paymentType: paymentType, walletName: paymentType == 'تحويل' ? selectedWallet : null, dryRun: true);
         if (!check1.success) {
           ToastService.show('الدفعة الأولى: ${check1.message}');
+          // إذا فشلنا، نحتاج لرسالة خطأ وإيقاف الحفظ
+          // ملاحظة: بما أننا عكسنا الأثر، البيانات القديمة حُذفت، لكن الشاشة مازالت تحتفظ بالبيانات الحالية للحفظ
           setState(() => _isSaving = false);
           return;
         }
@@ -441,19 +449,13 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
         }
       }
 
-      // 2. عكس الأثر القديم إذا كان تعديل
-      if (widget.editInvoiceId != null) {
-        DayRecordsStore.reverseInvoiceEffects(widget.editInvoiceId!);
-        await Future.delayed(const Duration(milliseconds: 50));
-      }
-
       // 3. تجهيز بيانات الفاتورة
       final invoiceNumber = originalInvoiceNumber ?? DayRecordsStore.getNextInvoiceNumber('purchase').toString();
       const uuid = Uuid();
       final invoiceId = uuid.v4();
       final invoiceDue = total - p1;
 
-      // 4. الحفظ في السجلات أولاً (قبل التغيير المالي)
+      // 4. الحفظ في السجلات
       for (final item in items) {
         DayRecordsStore.addRecord({
           'type': 'purchase',
@@ -472,7 +474,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
           'dueAmount': invoiceDue,
           'time': DateTime.now().toString(),
           'discount': discount,
-          'additionalExpenses': additionalExpenses, // حفظ المصاريف الإضافية
+          'additionalExpenses': additionalExpenses,
         });
       }
 
@@ -513,7 +515,6 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
 
       context.read<DayState>().addPurchase(subtotal, discount: discount);
 
-      // 6. المسح النهائي فقط بعد النجاح
       _clearAllFields();
       
       if (widget.editInvoiceId != null) {
